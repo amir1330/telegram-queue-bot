@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 
 import db
 from handlers.helpers import bot_has_pin_rights, is_admin, is_group
+from handlers.param_prompt import start_param_prompt
 from i18n import tr
 from message_builder import day_long, format_lesson_line
 from queue_view import DAYS_EN, DAYS_RU
@@ -51,6 +52,51 @@ def _overlaps(lessons, day_of_week, lesson_time, exclude_lesson_id=None):
     return None
 
 
+async def apply_setlesson(update: Update, context: ContextTypes.DEFAULT_TYPE, args) -> bool:
+    """Apply lesson day/time from arg tokens. Returns True on success."""
+    chat = update.effective_chat
+    user = update.effective_user
+    if not chat or not user:
+        return False
+    lang = db.get_chat_lang(chat.id)
+    if len(args) < 2:
+        await update.effective_message.reply_text(tr(lang, "usage_setlesson"))
+        return False
+    day_of_week = _parse_day(args[0])
+    lesson_time = _parse_time(args[1])
+    if day_of_week is None or lesson_time is None:
+        await update.effective_message.reply_text(tr(lang, "invalid_input"))
+        return False
+
+    existing = db.get_lessons(chat.id)
+    suppress = next((l for l in existing if l["day_of_week"] == day_of_week), None)
+    exclude_lesson_id = suppress["lesson_id"] if suppress else None
+    overlap = _overlaps(existing, day_of_week, lesson_time, exclude_lesson_id=exclude_lesson_id)
+    if overlap:
+        other = day_long(lang, overlap["day_of_week"])
+        await update.effective_message.reply_text(
+            tr(
+                lang, "lesson_overlap",
+                other=other, time=overlap["lesson_time"],
+                ob=overlap["open_before_min"], lt=overlap["lifetime_min"],
+            )
+        )
+        return False
+
+    lesson = db.add_lesson(
+        chat.id, day_of_week, lesson_time,
+        title=chat.title,
+    )
+    db.set_last_lesson(chat.id, lesson["lesson_id"])
+    scheduler = context.bot_data.get("scheduler")
+    if scheduler:
+        scheduler.schedule_lesson(lesson)
+    await update.effective_message.reply_text(
+        tr(lang, "lesson_set", lesson=format_lesson_line(lesson, lang))
+    )
+    return True
+
+
 async def cmd_setlesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
@@ -66,53 +112,29 @@ async def cmd_setlesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    args = context.args
-    if len(args) < 2:
-        await update.effective_message.reply_text(tr(lang, "usage_setlesson"))
+    if not context.args:
+        await start_param_prompt(update, context, "setlesson", tr(lang, "prompt_setlesson"))
         return
-    day_of_week = _parse_day(args[0])
-    lesson_time = _parse_time(args[1])
-    if day_of_week is None or lesson_time is None:
-        await update.effective_message.reply_text(tr(lang, "invalid_input"))
-        return
-
-    existing = db.get_lessons(chat.id)
-    suppress = next((l for l in existing if l["day_of_week"] == day_of_week), None)
-    exclude_lesson_id = suppress["lesson_id"] if suppress else None
-    overlap = _overlaps(existing, day_of_week, lesson_time, exclude_lesson_id=exclude_lesson_id)
-    if overlap:
-        other = day_long(lang, overlap["day_of_week"])
-        await update.effective_message.reply_text(
-            tr(
-                lang, "lesson_overlap",
-                other=other, time=overlap["lesson_time"],
-                ob=overlap["open_before_min"], lt=overlap["lifetime_min"],
-            )
-        )
-        return
-
-    lesson = db.add_lesson(
-        chat.id, day_of_week, lesson_time,
-        title=chat.title,
-    )
-    db.set_last_lesson(chat.id, lesson["lesson_id"])
-    scheduler = context.bot_data.get("scheduler")
-    if scheduler:
-        scheduler.schedule_lesson(lesson)
-    await update.effective_message.reply_text(
-        tr(lang, "lesson_set", lesson=format_lesson_line(lesson, lang))
-    )
+    await apply_setlesson(update, context, context.args)
 
 
 async def cmd_before(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await _set_window(update, context, field="open_before_min")
+    await _window_command(update, context, field="open_before_min")
 
 
 async def cmd_duration(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await _set_window(update, context, field="lifetime_min")
+    await _window_command(update, context, field="lifetime_min")
 
 
-async def _set_window(update: Update, context: ContextTypes.DEFAULT_TYPE, field: str):
+async def apply_before(update: Update, context: ContextTypes.DEFAULT_TYPE, args) -> bool:
+    return await apply_window(update, context, args, field="open_before_min")
+
+
+async def apply_duration(update: Update, context: ContextTypes.DEFAULT_TYPE, args) -> bool:
+    return await apply_window(update, context, args, field="lifetime_min")
+
+
+async def _window_command(update: Update, context: ContextTypes.DEFAULT_TYPE, field: str):
     chat = update.effective_chat
     user = update.effective_user
     if not is_group(update) or not chat or not user:
@@ -122,9 +144,25 @@ async def _set_window(update: Update, context: ContextTypes.DEFAULT_TYPE, field:
         await update.effective_message.reply_text(tr(lang, "admin_only"))
         return
 
+    command = "before" if field == "open_before_min" else "duration"
+    prompt_key = "prompt_before" if field == "open_before_min" else "prompt_duration"
+    if not context.args:
+        await start_param_prompt(update, context, command, tr(lang, prompt_key))
+        return
+    await apply_window(update, context, context.args, field=field)
+
+
+async def apply_window(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, args, field: str
+) -> bool:
+    """Apply open-before / lifetime from arg tokens. Returns True on success."""
+    chat = update.effective_chat
+    user = update.effective_user
+    if not chat or not user:
+        return False
+    lang = db.get_chat_lang(chat.id)
     cmd = "/before" if field == "open_before_min" else "/duration"
     label_key = "label_before" if field == "open_before_min" else "label_duration"
-    args = context.args
 
     day_of_week = None
     value_text = None
@@ -132,18 +170,18 @@ async def _set_window(update: Update, context: ContextTypes.DEFAULT_TYPE, field:
         day_of_week = _parse_day(args[0])
         if day_of_week is None:
             await update.effective_message.reply_text(tr(lang, "invalid_day"))
-            return
+            return False
         value_text = args[1]
     elif len(args) == 1:
         value_text = args[0]
 
     if value_text is None or not value_text.strip().isdigit():
         await update.effective_message.reply_text(tr(lang, "usage_window", cmd=cmd))
-        return
+        return False
     value = int(value_text.strip())
     if not (1 <= value <= 1440):
         await update.effective_message.reply_text(tr(lang, "value_range"))
-        return
+        return False
 
     if day_of_week is not None:
         lesson = next(
@@ -154,12 +192,12 @@ async def _set_window(update: Update, context: ContextTypes.DEFAULT_TYPE, field:
             await update.effective_message.reply_text(
                 tr(lang, "no_lesson_day", day=day_long(lang, day_of_week))
             )
-            return
+            return False
     else:
         lesson = db.get_last_lesson(chat.id)
         if lesson is None:
             await update.effective_message.reply_text(tr(lang, "no_lesson_yet"))
-            return
+            return False
     lesson = db.update_lesson_window(lesson["lesson_id"], **{field: value})
     scheduler = context.bot_data.get("scheduler")
     if scheduler:
@@ -170,6 +208,39 @@ async def _set_window(update: Update, context: ContextTypes.DEFAULT_TYPE, field:
             day=day_long(lang, lesson["day_of_week"]), time=lesson["lesson_time"],
         )
     )
+    return True
+
+
+async def apply_delete(update: Update, context: ContextTypes.DEFAULT_TYPE, args) -> bool:
+    """Remove a lesson by day token. Returns True on success."""
+    chat = update.effective_chat
+    user = update.effective_user
+    if not chat or not user:
+        return False
+    lang = db.get_chat_lang(chat.id)
+    if not args:
+        await update.effective_message.reply_text(tr(lang, "usage_delete"))
+        return False
+    day_of_week = _parse_day(args[0])
+    if day_of_week is None:
+        await update.effective_message.reply_text(tr(lang, "invalid_day"))
+        return False
+    removed_id = db.remove_lesson(chat.id, day_of_week)
+    if removed_id is None:
+        await update.effective_message.reply_text(
+            tr(lang, "no_lesson_day", day=day_long(lang, day_of_week))
+        )
+        return False
+    scheduler = context.bot_data.get("scheduler")
+    if scheduler:
+        try:
+            scheduler.unschedule_lesson(chat.id, removed_id)
+        except Exception as exc:
+            logger.warning("delete: unschedule failed: %s", exc)
+    await update.effective_message.reply_text(
+        tr(lang, "removed_lesson", day=day_long(lang, day_of_week))
+    )
+    return True
 
 
 async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -182,20 +253,6 @@ async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(tr(lang, "admin_only"))
         return
     if not context.args:
-        await update.effective_message.reply_text(tr(lang, "usage_delete"))
+        await start_param_prompt(update, context, "delete", tr(lang, "prompt_delete"))
         return
-    day_of_week = _parse_day(context.args[0])
-    if day_of_week is None:
-        await update.effective_message.reply_text(tr(lang, "invalid_day"))
-        return
-    removed_id = db.remove_lesson(chat.id, day_of_week)
-    if removed_id is None:
-        await update.effective_message.reply_text(tr(lang, "no_lesson_day", day=day_long(lang, day_of_week)))
-        return
-    scheduler = context.bot_data.get("scheduler")
-    if scheduler:
-        try:
-            scheduler.unschedule_lesson(chat.id, removed_id)
-        except Exception as exc:
-            logger.warning("delete: unschedule failed: %s", exc)
-    await update.effective_message.reply_text(tr(lang, "removed_lesson", day=day_long(lang, day_of_week)))
+    await apply_delete(update, context, context.args)

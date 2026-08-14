@@ -43,6 +43,11 @@ students join/leave, closes it at lesson time, and cleans it up afterwards.
 
 Config changes apply to the scheduler immediately — no restart needed.
 
+Parametric admin commands also work **without arguments** (`/setlesson`,
+`/before`, `/duration`, `/delete`): the bot asks only the caller for the
+value via a selective reply prompt, so other group members are not pulled
+into the flow. One-shot forms with args still work as above.
+
 ### Students
 
 | Command | Effect |
@@ -52,6 +57,9 @@ Config changes apply to the scheduler immediately — no restart needed.
 | `/setname Amir Abu Yunus` | set the name shown in this chat's queue |
 | `/info` | current settings + command list |
 | `/lang` | choose chat language (English / Русский) |
+
+Bare `/setname` prompts only you for a name (same selective reply pattern).
+One-shot `/setname <name>` still applies immediately.
 
 ## Requirements for a group
 
@@ -104,7 +112,9 @@ Required for the CI/CD workflow (repo → Settings → Secrets → Actions):
   until `duration` minutes after the lesson starts. No intermediate "closed"
   state.
 - Users can override the name shown in the queue with `/setname` — handy when
-  two students share a first name.
+  two students share a first name. In groups, bare `/setname` (and other
+  parametric commands) use a selective ForceReply so only the caller is
+  prompted; pending input is keyed by `(chat_id, user_id)`.
 - A single pinned message per session is updated in place — no pin spam.
 - A lesson at 00:10 is opened the previous day; the session date is the lesson
   date, so today's queue never mixes with next week's.

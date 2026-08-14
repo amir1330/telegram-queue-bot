@@ -11,6 +11,8 @@ from telegram.ext import (
     CallbackQueryHandler,
     ChatMemberHandler,
     CommandHandler,
+    MessageHandler,
+    filters,
 )
 
 import db
@@ -24,6 +26,7 @@ from handlers.config_handlers import (
 )
 from handlers.helpers import delete_later, is_admin, is_group
 from handlers.info_handler import cmd_info
+from handlers.param_reply import on_param_reply
 from handlers.queue_handlers import cmd_leave, cmd_queue, cmd_setname
 from handlers.tz_handler import cb_tz, cmd_tz
 from i18n import LANGS, tr
@@ -140,6 +143,9 @@ def main():
     application.add_handler(CommandHandler("duration", cmd_duration))
     application.add_handler(CommandHandler("delete", cmd_delete))
     application.add_handler(CommandHandler("tz", cmd_tz))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND & filters.REPLY, on_param_reply)
+    )
     application.add_handler(CallbackQueryHandler(cb_lang, pattern="^lang_"))
     application.add_handler(CallbackQueryHandler(cb_tz, pattern="^tz_"))
     application.add_handler(CallbackQueryHandler(on_button, pattern="^(join|leave)$"))

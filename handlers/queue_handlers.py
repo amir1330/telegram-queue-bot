@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 
 import db
 from handlers.helpers import delete_later, display_name, today
+from handlers.param_prompt import start_param_prompt
 from i18n import tr
 from message_builder import day_long
 from queue_message import refresh_queue_message
@@ -70,6 +71,29 @@ async def cmd_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _reply_auto_delete(update, context, tr(lang, "q_not_in"))
 
 
+async def apply_setname(update: Update, context: ContextTypes.DEFAULT_TYPE, args) -> bool:
+    """Apply display name from arg tokens. Returns True on success."""
+    chat = update.effective_chat
+    user = update.effective_user
+    if not chat or not user:
+        return False
+    lang = db.get_chat_lang(chat.id)
+    if not args:
+        await _reply_auto_delete(update, context, tr(lang, "usage_setname"))
+        return False
+    name = " ".join(args).strip()
+    if not name or len(name) > 60:
+        await _reply_auto_delete(update, context, tr(lang, "setname_too_long"))
+        return False
+    db.set_user_display_name(chat.id, user.id, name)
+    for session in _today_sessions(chat.id):
+        await refresh_queue_message(
+            context.bot, chat.id, session["lesson_id"], session["session_date"], lang=lang
+        )
+    await _reply_auto_delete(update, context, tr(lang, "setname_set", name=name))
+    return True
+
+
 async def cmd_setname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Set the name shown in this chat's queue (disambiguates same first names)."""
     chat = update.effective_chat
@@ -78,15 +102,6 @@ async def cmd_setname(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lang = db.get_chat_lang(chat.id)
     if not context.args:
-        await _reply_auto_delete(update, context, tr(lang, "usage_setname"))
+        await start_param_prompt(update, context, "setname", tr(lang, "prompt_setname"))
         return
-    name = " ".join(context.args).strip()
-    if not name or len(name) > 60:
-        await _reply_auto_delete(update, context, tr(lang, "setname_too_long"))
-        return
-    db.set_user_display_name(chat.id, user.id, name)
-    for session in _today_sessions(chat.id):
-        await refresh_queue_message(
-            context.bot, chat.id, session["lesson_id"], session["session_date"], lang=lang
-        )
-    await _reply_auto_delete(update, context, tr(lang, "setname_set", name=name))
+    await apply_setname(update, context, context.args)

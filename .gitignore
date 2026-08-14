@@ -10,3 +10,4 @@ venv/
 # Local agent tooling
 .cursor/
 .opencode/
+.tools/

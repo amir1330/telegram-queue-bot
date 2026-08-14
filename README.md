@@ -1,4 +1,4 @@
-# Telegram Lesson-Queue Bot
+# Telegram Queue Bot
 
 A multi-chat Telegram bot that manages a fair, live queue for lessons. Each
 group adds the bot, an admin configures the group's own lesson schedule, and
@@ -12,17 +12,26 @@ students join/leave, closes it at lesson time, and cleans it up afterwards.
 - `APScheduler` 3.x
 - SQLite (single file `queue_bot.db`)
 
-## Setup
+## How it works
+
+- An admin sets up lessons per chat (`/setlesson Monday 23:00`).
+- `before` minutes before a lesson the bot pins a queue message; students join
+  and leave by tapping the buttons under it (or with `/queue`, `/leave`).
+- The queue keeps accepting joins until `duration` minutes after the lesson
+  starts, then the message is deleted.
+- All state is scoped per chat and persisted in SQLite; on restart the bot
+  re-registers every scheduled job from the DB.
+
+## Setup (local)
 
 1. Create a bot via **@BotFather** → `/newbot`, copy the token.
 2. `cp .env.example .env` and set `BOT_TOKEN=...`
 3. `pip install -r requirements.txt`
 4. `python bot.py`
 
-The bot re-registers all scheduled jobs from the DB on startup, so restarts
-and redeploys are safe.
+## Commands
 
-## Admin commands (group admins only)
+### Group admins
 
 | Command | Effect |
 |---|---|
@@ -34,7 +43,7 @@ and redeploys are safe.
 
 Config changes apply to the scheduler immediately — no restart needed.
 
-## Student commands
+### Students
 
 | Command | Effect |
 |---|---|
@@ -44,62 +53,65 @@ Config changes apply to the scheduler immediately — no restart needed.
 | `/info` | current settings + command list |
 | `/lang` | choose chat language (English / Русский) |
 
-Students can also join/leave by tapping the buttons under the pinned queue
-message. All queue state is scoped per chat — groups never mix.
-
 ## Requirements for a group
 
 - Add the bot and promote it to **admin** with **Pin messages** and **Delete
   messages** rights (the bot tells you if it lacks them).
-- Set the chat's timezone once with `/tz` so lesson times and the cron jobs
-  match your local time. If unset, the bot uses the server's local time.
+- Set the chat's timezone once with `/tz` so lesson times and cron jobs match
+  your local time. If unset, the bot uses the server's local time.
 
-## Deployment
+## Deployment (Docker + CI/CD)
 
-### Railway / Render (simplest)
-- Push this repo, add a worker/service process running `python bot.py`.
-- Set `BOT_TOKEN` as an environment variable.
-- **Persistent storage is required** — SQLite must survive redeploys. Railway
-  volume (mounted at `/data`) or Render Disk: set `DB_PATH=/data/queue_bot.db`.
+The repo ships a `Dockerfile`, a production `docker-compose.prod.yml`, and a
+GitHub Actions workflow (`.github/workflows/deploy.yml`) that:
 
-### VPS + systemd
-- `pip install -r requirements.txt`, place the repo at e.g. `/opt/queue_bot`.
-- `systemd` service:
+1. builds the image and pushes it to GHCR (`ghcr.io/amir1330/queue-bot`),
+2. POSTs to the deploy webhook on the VPS (port `9001`) with a deploy token.
 
-```
-[Unit]
-Description=Telegram Lesson-Queue Bot
-After=network.target
+### Server setup
 
-[Service]
-User=bot
-WorkingDirectory=/opt/queue_bot
-EnvironmentFile=/opt/queue_bot/.env
-ExecStart=/usr/bin/python3 bot.py
-Restart=always
+1. Clone/place the repo on the server (e.g. `/root/telegram-queue-bot`) with
+   `docker-compose.prod.yml` and `deploy.sh`.
+2. Create a `.env` next to it:
 
-[Install]
-WantedBy=multi-user.target
-```
+   ```env
+   BOT_TOKEN=your_bot_token
+   DEPLOY_TOKEN=some_random_token
+   PORT=9001
+   DEPLOY_SCRIPT=/root/telegram-queue-bot/deploy.sh
+   ```
 
-- Keep `.env` (with the token) out of git; make sure `queue_bot.db` lives on
-  persistent storage.
+3. Run the webhook listener (port `9001`) under systemd so CI can trigger
+   redeploys. `deploy.sh` pulls the latest image, recreates the container and
+   keeps the SQLite data in the `queue_bot_data` volume.
 
-## Rollout
+### GitHub secrets
 
-1. Add the bot to your groups, promote to admin (Pin + Delete).
-2. Each group admin runs `/setlesson` (+ optional `/before`, `/duration`).
-3. Tell students to tap **Join** under the pinned message.
-4. Watch the first real cycle live in case a timezone or permission issue shows up.
+Required for the CI/CD workflow (repo → Settings → Secrets → Actions):
+
+| Secret | Value |
+|---|---|
+| `VPS_HOST` | server IP or hostname |
+| `DEPLOY_TOKEN` | same value as `DEPLOY_TOKEN` in the server `.env` |
+| `BOT_TOKEN` | the bot token (also used at runtime via the server `.env`) |
+
+**Never commit the token.** It is stored in GitHub secrets and in the server's
+`.env` only; both are excluded from git.
 
 ## Notes / design decisions
 
 - The queue opens `before` minutes before the lesson and keeps accepting joins
-  until `duration` minutes after the lesson starts (then the message is
-  deleted). No intermediate "closed" state. The pinned message shows this
-  window, so students know when it closes.
+  until `duration` minutes after the lesson starts. No intermediate "closed"
+  state.
 - Users can override the name shown in the queue with `/setname` — handy when
   two students share a first name.
 - A single pinned message per session is updated in place — no pin spam.
 - A lesson at 00:10 is opened the previous day; the session date is the lesson
   date, so today's queue never mixes with next week's.
+
+## Tests
+
+```bash
+pip install -r requirements.txt
+python tests/test_db.py
+```

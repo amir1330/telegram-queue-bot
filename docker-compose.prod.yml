@@ -1,6 +1,6 @@
 services:
   telegram-queue-bot:
-    image: ghcr.io/amir1330/telegram-queue-bot:latest
+    image: ghcr.io/amir1330/queue-bot:latest
     container_name: telegram-queue-bot
     restart: unless-stopped
     environment:

@@ -27,9 +27,17 @@ def clear_pending(chat_id: int, user_id: int) -> None:
     db.clear_param_pending(chat_id, user_id)
 
 
-def set_pending(chat_id: int, user_id: int, command: str, prompt_message_id: int) -> None:
+def set_pending(
+    chat_id: int,
+    user_id: int,
+    command: str,
+    prompt_message_id: int,
+    payload: str | None = None,
+) -> None:
     _purge_expired()
-    db.set_param_pending(chat_id, user_id, command, prompt_message_id, time.time())
+    db.set_param_pending(
+        chat_id, user_id, command, prompt_message_id, time.time(), payload=payload
+    )
 
 
 async def start_param_prompt(
@@ -37,6 +45,7 @@ async def start_param_prompt(
     context: ContextTypes.DEFAULT_TYPE,
     command: str,
     prompt_text: str,
+    payload: str | None = None,
 ) -> None:
     """Reply with selective ForceReply and store pending state for this user."""
     chat = update.effective_chat
@@ -58,10 +67,10 @@ async def start_param_prompt(
             input_field_placeholder=prompt_text[:64],
         ),
     )
-    set_pending(chat.id, user.id, command, msg.message_id)
+    set_pending(chat.id, user.id, command, msg.message_id, payload=payload)
     logger.info(
-        "param prompt started command=%s chat=%s user=%s prompt_msg=%s",
-        command, chat.id, user.id, msg.message_id,
+        "param prompt started command=%s chat=%s user=%s prompt_msg=%s payload=%r",
+        command, chat.id, user.id, msg.message_id, payload,
     )
 
 

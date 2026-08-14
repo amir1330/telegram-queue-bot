@@ -9,7 +9,7 @@ import db
 from handlers.helpers import bot_has_pin_rights, is_admin, is_group
 from handlers.param_prompt import start_param_prompt
 from i18n import tr
-from message_builder import day_long, format_lesson_line
+from message_builder import day_long, format_lesson_line, setlesson_day_markup
 from queue_view import DAYS_EN, DAYS_RU
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,34 @@ async def apply_setlesson(update: Update, context: ContextTypes.DEFAULT_TYPE, ar
     if day_of_week is None or lesson_time is None:
         await update.effective_message.reply_text(tr(lang, "invalid_input"))
         return False
+    return await _save_lesson(update, context, day_of_week, lesson_time)
+
+
+async def apply_setlesson_time(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, args, day_of_week: str
+) -> bool:
+    """Apply lesson time for a day already chosen via buttons. Returns True on success."""
+    chat = update.effective_chat
+    user = update.effective_user
+    if not chat or not user:
+        return False
+    lang = db.get_chat_lang(chat.id)
+    if not args:
+        await update.effective_message.reply_text(tr(lang, "prompt_setlesson_time"))
+        return False
+    lesson_time = _parse_time(args[0])
+    if lesson_time is None:
+        await update.effective_message.reply_text(tr(lang, "invalid_time"))
+        return False
+    if day_of_week not in DAYS_EN:
+        await update.effective_message.reply_text(tr(lang, "invalid_day"))
+        return False
+    return await _save_lesson(update, context, day_of_week, lesson_time)
+
+
+async def _save_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE, day_of_week, lesson_time) -> bool:
+    chat = update.effective_chat
+    lang = db.get_chat_lang(chat.id)
 
     existing = db.get_lessons(chat.id)
     suppress = next((l for l in existing if l["day_of_week"] == day_of_week), None)
@@ -112,10 +140,59 @@ async def cmd_setlesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if not context.args:
-        await start_param_prompt(update, context, "setlesson", tr(lang, "prompt_setlesson"))
+    args = context.args or []
+    if not args:
+        await update.effective_message.reply_text(
+            tr(lang, "prompt_setlesson_day"),
+            reply_markup=setlesson_day_markup(lang),
+        )
         return
-    await apply_setlesson(update, context, context.args)
+    if len(args) == 1:
+        day_of_week = _parse_day(args[0])
+        if day_of_week is None:
+            await update.effective_message.reply_text(tr(lang, "invalid_day"))
+            return
+        await start_param_prompt(
+            update,
+            context,
+            "setlesson_time",
+            tr(lang, "prompt_setlesson_time"),
+            payload=day_of_week,
+        )
+        return
+    await apply_setlesson(update, context, args)
+
+
+async def cb_setlesson_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin picked a weekday button — ask only for HH:MM next."""
+    query = update.callback_query
+    chat = query.message.chat if query.message else None
+    user = query.from_user
+    if not chat or not user:
+        await query.answer()
+        return
+    lang = db.get_chat_lang(chat.id)
+    if not await is_admin(update, chat.id, user.id):
+        await query.answer(text=tr(lang, "toast_admins_only"), show_alert=True)
+        return
+    day_of_week = query.data.rsplit("_", 1)[-1]
+    if day_of_week not in DAYS_EN:
+        await query.answer()
+        return
+    await query.answer()
+    try:
+        await query.edit_message_text(
+            tr(lang, "setlesson_day_picked", day=day_long(lang, day_of_week))
+        )
+    except Exception:
+        pass
+    await start_param_prompt(
+        update,
+        context,
+        "setlesson_time",
+        tr(lang, "prompt_setlesson_time"),
+        payload=day_of_week,
+    )
 
 
 async def cmd_before(update: Update, context: ContextTypes.DEFAULT_TYPE):

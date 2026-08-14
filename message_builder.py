@@ -47,6 +47,25 @@ def tz_markup():
     return InlineKeyboardMarkup(rows)
 
 
+def setlesson_day_markup(lang="en"):
+    """Weekday picker for /setlesson (two buttons per row)."""
+    keys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    rows = []
+    row = []
+    for key in keys:
+        row.append(
+            InlineKeyboardButton(
+                day_long(lang, key), callback_data=f"setlesson_day_{key}"
+            )
+        )
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(rows)
+
+
 def format_lesson_line(lesson, lang="en"):
     """One-line lesson summary, e.g. 'Monday 23:00 — opens 30 min before, accepts joins for 60 min'."""
     return (

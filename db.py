@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS param_pending (
     command TEXT NOT NULL,
     prompt_message_id INTEGER NOT NULL,
     created_at REAL NOT NULL,
+    payload TEXT,
     PRIMARY KEY (chat_id, user_id)
 );
 """
@@ -98,6 +99,12 @@ def _migrate(conn):
         conn.commit()
     if "timezone" not in cols:
         conn.execute("ALTER TABLE chats ADD COLUMN timezone TEXT")
+        conn.commit()
+    pending_cols = {
+        r["name"] for r in conn.execute("PRAGMA table_info(param_pending)").fetchall()
+    }
+    if pending_cols and "payload" not in pending_cols:
+        conn.execute("ALTER TABLE param_pending ADD COLUMN payload TEXT")
         conn.commit()
     conn.execute(
         "DELETE FROM queue_entries WHERE entry_id NOT IN "
@@ -460,17 +467,19 @@ def delete_active_message(chat_id, lesson_id, session_date):
         conn.commit()
 
 
-def set_param_pending(chat_id, user_id, command, prompt_message_id, created_at):
+def set_param_pending(chat_id, user_id, command, prompt_message_id, created_at, payload=None):
     with _LOCK:
         conn = _connect()
         conn.execute(
-            "INSERT INTO param_pending (chat_id, user_id, command, prompt_message_id, created_at) "
-            "VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO param_pending "
+            "(chat_id, user_id, command, prompt_message_id, created_at, payload) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(chat_id, user_id) DO UPDATE SET "
             "command = excluded.command, "
             "prompt_message_id = excluded.prompt_message_id, "
-            "created_at = excluded.created_at",
-            (chat_id, user_id, command, prompt_message_id, created_at),
+            "created_at = excluded.created_at, "
+            "payload = excluded.payload",
+            (chat_id, user_id, command, prompt_message_id, created_at, payload),
         )
         conn.commit()
 

@@ -35,7 +35,7 @@ students join/leave, closes it at lesson time, and cleans it up afterwards.
 
 | Command | Effect |
 |---|---|
-| `/setlesson Monday 23:00` | add/update a lesson for this chat (English or Russian day names work) |
+| `/setlesson Monday 23:00` | add/update a lesson (or bare `/setlesson` → day buttons, then type time) |
 | `/before [day] <min>` | minutes before the lesson the queue opens (default 30) |
 | `/duration [day] <min>` | minutes after lesson start the queue keeps accepting joins (default 120) |
 | `/delete Monday` | remove a lesson (English or Russian day names work) |

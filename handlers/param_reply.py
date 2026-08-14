@@ -11,6 +11,7 @@ from handlers.config_handlers import (
     apply_delete,
     apply_duration,
     apply_setlesson,
+    apply_setlesson_time,
 )
 from handlers.helpers import is_admin
 from handlers.param_prompt import (
@@ -23,7 +24,7 @@ from i18n import tr
 
 logger = logging.getLogger(__name__)
 
-_ADMIN_COMMANDS = frozenset({"setlesson", "before", "duration", "delete"})
+_ADMIN_COMMANDS = frozenset({"setlesson", "setlesson_time", "before", "duration", "delete"})
 
 _APPLY = {
     "setname": apply_setname,
@@ -77,11 +78,6 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # else: bare text while pending — accept (FSM fallback for group clients)
 
     command = pending["command"]
-    apply_fn = _APPLY.get(command)
-    if apply_fn is None:
-        clear_pending(chat.id, user.id)
-        return
-
     if command in _ADMIN_COMMANDS:
         if not await is_admin(update, chat.id, user.id):
             lang = db.get_chat_lang(chat.id)
@@ -91,10 +87,23 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = message.text.split()
     logger.info(
-        "param reply apply command=%s chat=%s user=%s args=%r",
-        command, chat.id, user.id, args,
+        "param reply apply command=%s chat=%s user=%s args=%r payload=%r",
+        command, chat.id, user.id, args, pending.get("payload"),
     )
-    ok = await apply_fn(update, context, args)
+
+    if command == "setlesson_time":
+        day = pending.get("payload")
+        if not day:
+            clear_pending(chat.id, user.id)
+            return
+        ok = await apply_setlesson_time(update, context, args, day)
+    else:
+        apply_fn = _APPLY.get(command)
+        if apply_fn is None:
+            clear_pending(chat.id, user.id)
+            return
+        ok = await apply_fn(update, context, args)
+
     if not ok:
         return
 

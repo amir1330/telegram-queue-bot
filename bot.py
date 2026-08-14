@@ -19,6 +19,7 @@ import db
 from command_menu import sync_all_chats, sync_commands_for_chat
 from handlers.buttons import on_button
 from handlers.config_handlers import (
+    cb_setlesson_day,
     cmd_before,
     cmd_delete,
     cmd_duration,
@@ -148,6 +149,7 @@ def main():
     )
     application.add_handler(CallbackQueryHandler(cb_lang, pattern="^lang_"))
     application.add_handler(CallbackQueryHandler(cb_tz, pattern="^tz_"))
+    application.add_handler(CallbackQueryHandler(cb_setlesson_day, pattern="^setlesson_day_"))
     application.add_handler(CallbackQueryHandler(on_button, pattern="^(join|leave)$"))
     application.add_handler(ChatMemberHandler(on_bot_added, ChatMemberHandler.ANY_CHAT_MEMBER))
     application.add_handler(

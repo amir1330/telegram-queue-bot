@@ -7,21 +7,29 @@ back to the BotCommandScopeChat list.
 
 import logging
 
-from telegram import BotCommand, BotCommandScopeChat, BotCommandScopeChatAdministrators
+from telegram import (
+    BotCommand,
+    BotCommandScopeAllGroupChats,
+    BotCommandScopeChat,
+    BotCommandScopeChatAdministrators,
+    BotCommandScopeDefault,
+)
 
 import db
 
 logger = logging.getLogger(__name__)
 
+# Keep the student slash-menu minimal — join/leave buttons cover most use,
+# /setname is the one text command they still need in groups.
 STUDENT_COMMANDS = [
     ("queue", "Встать в очередь / Join queue"),
     ("leave", "Выйти из очереди / Leave queue"),
     ("setname", "Имя в очереди / Queue display name"),
-    ("info", "Настройки и команды / Settings & info"),
-    ("lang", "Язык / Language"),
 ]
 
 ADMIN_COMMANDS = [
+    ("info", "Настройки и команды / Settings & info"),
+    ("lang", "Язык / Language"),
     ("setlesson", "Задать урок: день и время / Set a lesson"),
     ("before", "За сколько минут до урока открыть очередь / Open-before minutes"),
     ("duration", "Сколько минут список живёт после урока / List lifetime minutes"),
@@ -53,7 +61,23 @@ async def sync_commands_for_chat(bot, chat_id: int):
         logger.warning("sync_commands_for_chat(%s) failed: %s", chat_id, exc)
 
 
+async def sync_default_commands(bot):
+    """Fallback menus for chats that have not been synced yet (and DMs)."""
+    try:
+        await bot.set_my_commands(
+            _to_bot_commands(STUDENT_COMMANDS),
+            scope=BotCommandScopeDefault(),
+        )
+        await bot.set_my_commands(
+            _to_bot_commands(STUDENT_COMMANDS),
+            scope=BotCommandScopeAllGroupChats(),
+        )
+    except Exception as exc:
+        logger.warning("sync_default_commands failed: %s", exc)
+
+
 async def sync_all_chats(bot):
     """Startup reconciliation: re-sync menus for every known chat."""
+    await sync_default_commands(bot)
     for chat_id in db.get_all_chat_ids():
         await sync_commands_for_chat(bot, chat_id)

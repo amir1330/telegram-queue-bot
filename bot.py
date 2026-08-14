@@ -53,11 +53,15 @@ async def cmd_start(update: Update, context):
 
 
 async def cmd_lang(update: Update, context):
-    """Pick the chat language (en/ru)."""
+    """Pick the chat language (en/ru). Admins only in groups."""
     chat = update.effective_chat
+    user = update.effective_user
     if not chat:
         return
     lang = db.get_chat_lang(chat.id)
+    if is_group(update) and user and not await is_admin(update, chat.id, user.id):
+        await update.effective_message.reply_text(tr(lang, "admin_only"))
+        return
     msg = await update.effective_message.reply_text(
         tr(lang, "lang_prompt"), parse_mode="HTML", reply_markup=lang_markup(lang)
     )

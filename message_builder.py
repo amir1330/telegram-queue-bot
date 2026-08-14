@@ -103,8 +103,6 @@ def student_commands(lang="en"):
             "/queue - " + tr(lang, "student_queue"),
             "/leave - " + tr(lang, "student_leave"),
             "/setname - " + tr(lang, "student_setname"),
-            "/info - " + tr(lang, "student_info"),
-            "/lang - " + tr(lang, "student_lang"),
         ]
     )
 
@@ -112,6 +110,8 @@ def student_commands(lang="en"):
 def admin_commands(lang="en"):
     return "\n".join(
         [
+            "/info - " + tr(lang, "student_info"),
+            "/lang - " + tr(lang, "student_lang"),
             "/setlesson &lt;Day&gt; &lt;HH:MM&gt; - " + tr(lang, "admin_setlesson"),
             "/before &lt;min&gt; - " + tr(lang, "admin_before"),
             "/duration &lt;min&gt; - " + tr(lang, "admin_duration"),

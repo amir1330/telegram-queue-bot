@@ -1,0 +1,13 @@
+.env
+queue_bot.db
+venv/
+__pycache__/
+*.pyc
+.git
+.gitignore
+.github
+.cursor/
+.opencode/
+openspec/
+tests/
+*.md

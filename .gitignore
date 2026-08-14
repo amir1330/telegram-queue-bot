@@ -1,0 +1,12 @@
+# Secrets / runtime data
+.env
+queue_bot.db
+
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Local agent tooling
+.cursor/
+.opencode/

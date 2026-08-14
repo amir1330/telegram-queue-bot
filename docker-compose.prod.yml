@@ -1,0 +1,12 @@
+services:
+  telegram-queue-bot:
+    image: ghcr.io/amir1330/telegram-queue-bot:latest
+    container_name: telegram-queue-bot
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+    volumes:
+      - queue_bot_data:/app/data
+
+volumes:
+  queue_bot_data:

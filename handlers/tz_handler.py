@@ -4,7 +4,15 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 import db
-from handlers.helpers import bot_has_pin_rights, is_admin, is_group
+from handlers.helpers import (
+    AUTO_DELETE_SECONDS,
+    bot_has_pin_rights,
+    is_admin,
+    is_group,
+    reply_ephemeral,
+    reply_keep,
+    schedule_delete,
+)
 from i18n import tr
 from message_builder import tz_markup
 from timezone import resolve_tz, offset_label
@@ -24,11 +32,11 @@ async def cmd_tz(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lang = db.get_chat_lang(chat.id)
     if not await is_admin(update, chat.id, user.id):
-        await update.effective_message.reply_text(tr(lang, "admin_only"))
+        await reply_ephemeral(update, context, tr(lang, "admin_only"))
         return
     if not await bot_has_pin_rights(context, chat.id):
-        await update.effective_message.reply_text(
-            tr(lang, "need_admin_rights"), parse_mode="HTML"
+        await reply_ephemeral(
+            update, context, tr(lang, "need_admin_rights"), parse_mode="HTML"
         )
         return
 
@@ -37,11 +45,11 @@ async def cmd_tz(update: Update, context: ContextTypes.DEFAULT_TYPE):
         value = " ".join(args).strip()
         tz = resolve_tz(value)
         if tz is None:
-            await update.effective_message.reply_text(tr(lang, "tz_invalid", value=value))
+            await reply_ephemeral(update, context, tr(lang, "tz_invalid", value=value))
             return
         zone, label = _describe(tz)
         db.set_chat_timezone(chat.id, zone, title=chat.title)
-        await update.effective_message.reply_text(tr(lang, "tz_set", zone=zone, label=label))
+        await reply_ephemeral(update, context, tr(lang, "tz_set", zone=zone, label=label))
         await _resync(context, chat.id)
         return
 
@@ -53,7 +61,9 @@ async def cmd_tz(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tr(lang, "tz_pick_hint"),
         ]
     )
-    await update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=tz_markup())
+    await reply_keep(
+        update, context, text, parse_mode="HTML", reply_markup=tz_markup()
+    )
 
 
 def _current(chat_id):
@@ -87,6 +97,9 @@ async def cb_tz(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tr(lang, "tz_set", zone=zone_name, label=label), parse_mode="HTML"
     )
     await query.answer()
+    schedule_delete(
+        context.bot, chat.id, query.message.message_id, seconds=AUTO_DELETE_SECONDS
+    )
     await _resync(context, chat.id)
 
 

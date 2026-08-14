@@ -1,12 +1,19 @@
 """Lesson configuration commands (admin only)."""
 
+import json
 import logging
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 import db
-from handlers.helpers import bot_has_pin_rights, is_admin, is_group
+from handlers.helpers import (
+    bot_has_pin_rights,
+    is_admin,
+    is_group,
+    reply_ephemeral,
+    reply_keep,
+)
 from handlers.param_prompt import start_param_prompt
 from i18n import tr
 from message_builder import day_long, format_lesson_line, setlesson_day_markup
@@ -52,6 +59,19 @@ def _overlaps(lessons, day_of_week, lesson_time, exclude_lesson_id=None):
     return None
 
 
+def parse_setlesson_payload(raw):
+    """Return (day_key, optional_ui_message_id) from pending payload."""
+    if not raw:
+        return None, None
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return data.get("day"), data.get("ui_message_id")
+    except (TypeError, json.JSONDecodeError):
+        pass
+    return raw, None
+
+
 async def apply_setlesson(update: Update, context: ContextTypes.DEFAULT_TYPE, args) -> bool:
     """Apply lesson day/time from arg tokens. Returns True on success."""
     chat = update.effective_chat
@@ -60,12 +80,12 @@ async def apply_setlesson(update: Update, context: ContextTypes.DEFAULT_TYPE, ar
         return False
     lang = db.get_chat_lang(chat.id)
     if len(args) < 2:
-        await update.effective_message.reply_text(tr(lang, "usage_setlesson"))
+        await reply_ephemeral(update, context, tr(lang, "usage_setlesson"))
         return False
     day_of_week = _parse_day(args[0])
     lesson_time = _parse_time(args[1])
     if day_of_week is None or lesson_time is None:
-        await update.effective_message.reply_text(tr(lang, "invalid_input"))
+        await reply_ephemeral(update, context, tr(lang, "invalid_input"))
         return False
     return await _save_lesson(update, context, day_of_week, lesson_time)
 
@@ -80,14 +100,14 @@ async def apply_setlesson_time(
         return False
     lang = db.get_chat_lang(chat.id)
     if not args:
-        await update.effective_message.reply_text(tr(lang, "prompt_setlesson_time"))
+        await reply_ephemeral(update, context, tr(lang, "prompt_setlesson_time"))
         return False
     lesson_time = _parse_time(args[0])
     if lesson_time is None:
-        await update.effective_message.reply_text(tr(lang, "invalid_time"))
+        await reply_ephemeral(update, context, tr(lang, "invalid_time"))
         return False
     if day_of_week not in DAYS_EN:
-        await update.effective_message.reply_text(tr(lang, "invalid_day"))
+        await reply_ephemeral(update, context, tr(lang, "invalid_day"))
         return False
     return await _save_lesson(update, context, day_of_week, lesson_time)
 
@@ -102,12 +122,14 @@ async def _save_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE, day_o
     overlap = _overlaps(existing, day_of_week, lesson_time, exclude_lesson_id=exclude_lesson_id)
     if overlap:
         other = day_long(lang, overlap["day_of_week"])
-        await update.effective_message.reply_text(
+        await reply_ephemeral(
+            update,
+            context,
             tr(
                 lang, "lesson_overlap",
                 other=other, time=overlap["lesson_time"],
                 ob=overlap["open_before_min"], lt=overlap["lifetime_min"],
-            )
+            ),
         )
         return False
 
@@ -119,8 +141,8 @@ async def _save_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE, day_o
     scheduler = context.bot_data.get("scheduler")
     if scheduler:
         scheduler.schedule_lesson(lesson)
-    await update.effective_message.reply_text(
-        tr(lang, "lesson_set", lesson=format_lesson_line(lesson, lang))
+    await reply_ephemeral(
+        update, context, tr(lang, "lesson_set", lesson=format_lesson_line(lesson, lang))
     )
     return True
 
@@ -132,17 +154,19 @@ async def cmd_setlesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_group(update) or not chat or not user:
         return
     if not await is_admin(update, chat.id, user.id):
-        await update.effective_message.reply_text(tr(lang, "admin_only"))
+        await reply_ephemeral(update, context, tr(lang, "admin_only"))
         return
     if not await bot_has_pin_rights(context, chat.id):
-        await update.effective_message.reply_text(
-            tr(lang, "need_admin_rights"), parse_mode="HTML"
+        await reply_ephemeral(
+            update, context, tr(lang, "need_admin_rights"), parse_mode="HTML"
         )
         return
 
     args = context.args or []
     if not args:
-        await update.effective_message.reply_text(
+        await reply_keep(
+            update,
+            context,
             tr(lang, "prompt_setlesson_day"),
             reply_markup=setlesson_day_markup(lang),
         )
@@ -150,7 +174,7 @@ async def cmd_setlesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(args) == 1:
         day_of_week = _parse_day(args[0])
         if day_of_week is None:
-            await update.effective_message.reply_text(tr(lang, "invalid_day"))
+            await reply_ephemeral(update, context, tr(lang, "invalid_day"))
             return
         await start_param_prompt(
             update,
@@ -186,12 +210,15 @@ async def cb_setlesson_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception:
         pass
+    payload = json.dumps(
+        {"day": day_of_week, "ui_message_id": query.message.message_id}
+    )
     await start_param_prompt(
         update,
         context,
         "setlesson_time",
         tr(lang, "prompt_setlesson_time"),
-        payload=day_of_week,
+        payload=payload,
     )
 
 
@@ -218,7 +245,7 @@ async def _window_command(update: Update, context: ContextTypes.DEFAULT_TYPE, fi
         return
     lang = db.get_chat_lang(chat.id)
     if not await is_admin(update, chat.id, user.id):
-        await update.effective_message.reply_text(tr(lang, "admin_only"))
+        await reply_ephemeral(update, context, tr(lang, "admin_only"))
         return
 
     command = "before" if field == "open_before_min" else "duration"
@@ -246,18 +273,18 @@ async def apply_window(
     if len(args) == 2:
         day_of_week = _parse_day(args[0])
         if day_of_week is None:
-            await update.effective_message.reply_text(tr(lang, "invalid_day"))
+            await reply_ephemeral(update, context, tr(lang, "invalid_day"))
             return False
         value_text = args[1]
     elif len(args) == 1:
         value_text = args[0]
 
     if value_text is None or not value_text.strip().isdigit():
-        await update.effective_message.reply_text(tr(lang, "usage_window", cmd=cmd))
+        await reply_ephemeral(update, context, tr(lang, "usage_window", cmd=cmd))
         return False
     value = int(value_text.strip())
     if not (1 <= value <= 1440):
-        await update.effective_message.reply_text(tr(lang, "value_range"))
+        await reply_ephemeral(update, context, tr(lang, "value_range"))
         return False
 
     if day_of_week is not None:
@@ -266,24 +293,26 @@ async def apply_window(
             None,
         )
         if lesson is None:
-            await update.effective_message.reply_text(
-                tr(lang, "no_lesson_day", day=day_long(lang, day_of_week))
+            await reply_ephemeral(
+                update, context, tr(lang, "no_lesson_day", day=day_long(lang, day_of_week))
             )
             return False
     else:
         lesson = db.get_last_lesson(chat.id)
         if lesson is None:
-            await update.effective_message.reply_text(tr(lang, "no_lesson_yet"))
+            await reply_ephemeral(update, context, tr(lang, "no_lesson_yet"))
             return False
     lesson = db.update_lesson_window(lesson["lesson_id"], **{field: value})
     scheduler = context.bot_data.get("scheduler")
     if scheduler:
         scheduler.schedule_lesson(lesson)
-    await update.effective_message.reply_text(
+    await reply_ephemeral(
+        update,
+        context,
         tr(
             lang, "window_set", label=tr(lang, label_key), value=value,
             day=day_long(lang, lesson["day_of_week"]), time=lesson["lesson_time"],
-        )
+        ),
     )
     return True
 
@@ -296,16 +325,16 @@ async def apply_delete(update: Update, context: ContextTypes.DEFAULT_TYPE, args)
         return False
     lang = db.get_chat_lang(chat.id)
     if not args:
-        await update.effective_message.reply_text(tr(lang, "usage_delete"))
+        await reply_ephemeral(update, context, tr(lang, "usage_delete"))
         return False
     day_of_week = _parse_day(args[0])
     if day_of_week is None:
-        await update.effective_message.reply_text(tr(lang, "invalid_day"))
+        await reply_ephemeral(update, context, tr(lang, "invalid_day"))
         return False
     removed_id = db.remove_lesson(chat.id, day_of_week)
     if removed_id is None:
-        await update.effective_message.reply_text(
-            tr(lang, "no_lesson_day", day=day_long(lang, day_of_week))
+        await reply_ephemeral(
+            update, context, tr(lang, "no_lesson_day", day=day_long(lang, day_of_week))
         )
         return False
     scheduler = context.bot_data.get("scheduler")
@@ -314,8 +343,8 @@ async def apply_delete(update: Update, context: ContextTypes.DEFAULT_TYPE, args)
             scheduler.unschedule_lesson(chat.id, removed_id)
         except Exception as exc:
             logger.warning("delete: unschedule failed: %s", exc)
-    await update.effective_message.reply_text(
-        tr(lang, "removed_lesson", day=day_long(lang, day_of_week))
+    await reply_ephemeral(
+        update, context, tr(lang, "removed_lesson", day=day_long(lang, day_of_week))
     )
     return True
 
@@ -327,7 +356,7 @@ async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lang = db.get_chat_lang(chat.id)
     if not await is_admin(update, chat.id, user.id):
-        await update.effective_message.reply_text(tr(lang, "admin_only"))
+        await reply_ephemeral(update, context, tr(lang, "admin_only"))
         return
     if not context.args:
         await start_param_prompt(update, context, "delete", tr(lang, "prompt_delete"))

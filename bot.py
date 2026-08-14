@@ -25,7 +25,7 @@ from handlers.config_handlers import (
     cmd_duration,
     cmd_setlesson,
 )
-from handlers.helpers import delete_later, is_admin, is_group
+from handlers.helpers import cleanup_trigger, is_admin, is_group, schedule_delete
 from handlers.info_handler import cmd_info
 from handlers.param_reply import on_param_reply
 from handlers.queue_handlers import cmd_leave, cmd_queue, cmd_setname
@@ -42,14 +42,13 @@ logger = logging.getLogger(__name__)
 async def cmd_start(update: Update, context):
     chat = update.effective_chat
     lang = db.get_chat_lang(chat.id) if chat else "en"
+    await cleanup_trigger(update, context, seconds=0)
     msg = await update.effective_message.reply_text(
         welcome_text(lang), parse_mode="HTML"
     )
     if chat and is_group(update):
         await sync_commands_for_chat(context.bot, chat.id)
-    asyncio.create_task(
-        delete_later(context.bot, msg.chat_id, msg.message_id)
-    )
+    schedule_delete(context.bot, msg.chat_id, msg.message_id)
 
 
 async def cmd_lang(update: Update, context):
@@ -60,14 +59,14 @@ async def cmd_lang(update: Update, context):
         return
     lang = db.get_chat_lang(chat.id)
     if is_group(update) and user and not await is_admin(update, chat.id, user.id):
-        await update.effective_message.reply_text(tr(lang, "admin_only"))
+        from handlers.helpers import reply_ephemeral
+        await reply_ephemeral(update, context, tr(lang, "admin_only"))
         return
+    await cleanup_trigger(update, context, seconds=0)
     msg = await update.effective_message.reply_text(
         tr(lang, "lang_prompt"), parse_mode="HTML", reply_markup=lang_markup(lang)
     )
-    asyncio.create_task(
-        delete_later(context.bot, msg.chat_id, msg.message_id)
-    )
+    schedule_delete(context.bot, msg.chat_id, msg.message_id)
 
 
 async def cb_lang(update: Update, context):
@@ -91,9 +90,7 @@ async def cb_lang(update: Update, context):
         tr(code, "lang_prompt"), parse_mode="HTML", reply_markup=lang_markup(code)
     )
     await query.answer(text=tr(code, "lang_set", lang=LANGS[code]))
-    asyncio.create_task(
-        delete_later(context.bot, query.message.chat_id, query.message.message_id)
-    )
+    schedule_delete(context.bot, query.message.chat_id, query.message.message_id)
 
 
 async def on_bot_added(update: Update, context):
@@ -107,9 +104,7 @@ async def on_bot_added(update: Update, context):
             welcome_text(lang), parse_mode="HTML"
         )
         await sync_commands_for_chat(context.bot, member.chat.id)
-        asyncio.create_task(
-            delete_later(context.bot, msg.chat_id, msg.message_id)
-        )
+        schedule_delete(context.bot, msg.chat_id, msg.message_id)
 
 
 async def on_member_status_change(update: Update, context):

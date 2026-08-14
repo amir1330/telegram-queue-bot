@@ -1,12 +1,10 @@
 """Queue commands: join (/queue) and leave (/leave)."""
 
-import asyncio
-
 from telegram import Update
 from telegram.ext import ContextTypes
 
 import db
-from handlers.helpers import delete_later, display_name, today
+from handlers.helpers import display_name, reply_ephemeral, today
 from handlers.param_prompt import start_param_prompt
 from i18n import tr
 from message_builder import day_long
@@ -15,12 +13,6 @@ from queue_message import refresh_queue_message
 
 def _today_sessions(chat_id):
     return db.get_active_messages(chat_id=chat_id, session_date=today(chat_id))
-
-
-async def _reply_auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE, text):
-    """Reply and schedule the message to disappear after AUTO_DELETE_SECONDS."""
-    msg = await update.effective_message.reply_text(text)
-    asyncio.create_task(delete_later(context.bot, msg.chat_id, msg.message_id))
 
 
 async def cmd_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -33,9 +25,9 @@ async def cmd_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     open_session = next((s for s in sessions if s["status"] == "open"), None)
     if open_session is None:
         if sessions:
-            await _reply_auto_delete(update, context, tr(lang, "q_closed"))
+            await reply_ephemeral(update, context, tr(lang, "q_closed"))
         else:
-            await _reply_auto_delete(update, context, tr(lang, "q_none_open"))
+            await reply_ephemeral(update, context, tr(lang, "q_none_open"))
         return
 
     lesson = db.get_lesson_by_id(open_session["lesson_id"])
@@ -43,12 +35,12 @@ async def cmd_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sdate = today(chat.id)
     entry = db.add_queue_entry(chat.id, open_session["lesson_id"], user.id, name, sdate)
     if entry is None:
-        await _reply_auto_delete(update, context, tr(lang, "q_already_in"))
+        await reply_ephemeral(update, context, tr(lang, "q_already_in"))
         return
     pos = db.position_of(chat.id, open_session["lesson_id"], sdate, user.id)
     await refresh_queue_message(context.bot, chat.id, open_session["lesson_id"], sdate, lang=lang)
     label = f"{day_long(lang, lesson['day_of_week'])} {lesson['lesson_time']}" if lesson else "today"
-    await _reply_auto_delete(
+    await reply_ephemeral(
         update, context, tr(lang, "q_joined_at", name=name, pos=pos, label=label)
     )
 
@@ -66,9 +58,9 @@ async def cmd_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if pos is not None:
             db.remove_queue_entry(chat.id, session["lesson_id"], user.id, sdate)
             await refresh_queue_message(context.bot, chat.id, session["lesson_id"], sdate, lang=lang)
-            await _reply_auto_delete(update, context, tr(lang, "q_left", pos=pos))
+            await reply_ephemeral(update, context, tr(lang, "q_left", pos=pos))
             return
-    await _reply_auto_delete(update, context, tr(lang, "q_not_in"))
+    await reply_ephemeral(update, context, tr(lang, "q_not_in"))
 
 
 async def apply_setname(update: Update, context: ContextTypes.DEFAULT_TYPE, args) -> bool:
@@ -79,18 +71,18 @@ async def apply_setname(update: Update, context: ContextTypes.DEFAULT_TYPE, args
         return False
     lang = db.get_chat_lang(chat.id)
     if not args:
-        await _reply_auto_delete(update, context, tr(lang, "usage_setname"))
+        await reply_ephemeral(update, context, tr(lang, "usage_setname"))
         return False
     name = " ".join(args).strip()
     if not name or len(name) > 60:
-        await _reply_auto_delete(update, context, tr(lang, "setname_too_long"))
+        await reply_ephemeral(update, context, tr(lang, "setname_too_long"))
         return False
     db.set_user_display_name(chat.id, user.id, name)
     for session in _today_sessions(chat.id):
         await refresh_queue_message(
             context.bot, chat.id, session["lesson_id"], session["session_date"], lang=lang
         )
-    await _reply_auto_delete(update, context, tr(lang, "setname_set", name=name))
+    await reply_ephemeral(update, context, tr(lang, "setname_set", name=name))
     return True
 
 

@@ -7,6 +7,7 @@ from telegram import ForceReply, Update
 from telegram.ext import ContextTypes
 
 import db
+from handlers.helpers import cleanup_trigger, is_group
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,9 @@ async def start_param_prompt(
     if not chat or not user or not update.effective_message:
         return
     clear_pending(chat.id, user.id)
+    # Remove the triggering /command in groups (not callback button messages).
+    if is_group(update) and not update.callback_query:
+        await cleanup_trigger(update, context, seconds=0)
     # Mention + reply-to-user so ForceReply(selective=True) targets only this member.
     if user.username:
         text = f"@{user.username}\n{prompt_text}"

@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 import db
-from handlers.helpers import is_admin
+from handlers.helpers import is_admin, reply_ephemeral
 from message_builder import build_info_text
 from timezone import offset_label, resolve_tz
 
@@ -26,4 +26,4 @@ async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
             zone = zone_name
             zone_label = offset_label(tz)
     text = build_info_text(lessons, is_admin=admin, lang=lang, zone=zone, zone_label=zone_label)
-    await update.effective_message.reply_text(text, parse_mode="HTML")
+    await reply_ephemeral(update, context, text, parse_mode="HTML")

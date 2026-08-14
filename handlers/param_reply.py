@@ -12,8 +12,9 @@ from handlers.config_handlers import (
     apply_duration,
     apply_setlesson,
     apply_setlesson_time,
+    parse_setlesson_payload,
 )
-from handlers.helpers import is_admin
+from handlers.helpers import is_admin, reply_ephemeral, schedule_delete
 from handlers.param_prompt import (
     clear_pending,
     delete_prompt_best_effort,
@@ -60,8 +61,7 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if pending is None:
         # User replied to an old bot prompt after restart/TTL — tell them why.
         if _is_reply_to_bot(message, context.bot.id):
-            lang = db.get_chat_lang(chat.id)
-            await message.reply_text(tr(lang, "prompt_expired"))
+            await reply_ephemeral(update, context, tr(db.get_chat_lang(chat.id), "prompt_expired"))
             logger.info(
                 "param reply ignored: no pending chat=%s user=%s", chat.id, user.id
             )
@@ -80,8 +80,7 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command = pending["command"]
     if command in _ADMIN_COMMANDS:
         if not await is_admin(update, chat.id, user.id):
-            lang = db.get_chat_lang(chat.id)
-            await message.reply_text(tr(lang, "admin_only"))
+            await reply_ephemeral(update, context, tr(db.get_chat_lang(chat.id), "admin_only"))
             clear_pending(chat.id, user.id)
             return
 
@@ -91,8 +90,9 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         command, chat.id, user.id, args, pending.get("payload"),
     )
 
+    ui_message_id = None
     if command == "setlesson_time":
-        day = pending.get("payload")
+        day, ui_message_id = parse_setlesson_payload(pending.get("payload"))
         if not day:
             clear_pending(chat.id, user.id)
             return
@@ -110,3 +110,5 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt_message_id = pending["prompt_message_id"]
     clear_pending(chat.id, user.id)
     await delete_prompt_best_effort(context.bot, chat.id, prompt_message_id)
+    if ui_message_id:
+        schedule_delete(context.bot, chat.id, ui_message_id, seconds=0)

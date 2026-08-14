@@ -144,7 +144,7 @@ def main():
     application.add_handler(CommandHandler("delete", cmd_delete))
     application.add_handler(CommandHandler("tz", cmd_tz))
     application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND & filters.REPLY, on_param_reply)
+        MessageHandler(filters.TEXT & ~filters.COMMAND, on_param_reply)
     )
     application.add_handler(CallbackQueryHandler(cb_lang, pattern="^lang_"))
     application.add_handler(CallbackQueryHandler(cb_tz, pattern="^tz_"))

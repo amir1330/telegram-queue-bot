@@ -65,6 +65,15 @@ CREATE TABLE IF NOT EXISTS chat_state (
     chat_id INTEGER PRIMARY KEY,
     last_lesson_id INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS param_pending (
+    chat_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    command TEXT NOT NULL,
+    prompt_message_id INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (chat_id, user_id)
+);
 """
 
 
@@ -447,5 +456,50 @@ def delete_active_message(chat_id, lesson_id, session_date):
         conn.execute(
             "DELETE FROM active_messages WHERE chat_id = ? AND lesson_id = ? AND session_date = ?",
             (chat_id, lesson_id, session_date),
+        )
+        conn.commit()
+
+
+def set_param_pending(chat_id, user_id, command, prompt_message_id, created_at):
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "INSERT INTO param_pending (chat_id, user_id, command, prompt_message_id, created_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(chat_id, user_id) DO UPDATE SET "
+            "command = excluded.command, "
+            "prompt_message_id = excluded.prompt_message_id, "
+            "created_at = excluded.created_at",
+            (chat_id, user_id, command, prompt_message_id, created_at),
+        )
+        conn.commit()
+
+
+def get_param_pending(chat_id, user_id):
+    with _LOCK:
+        row = _connect().execute(
+            "SELECT * FROM param_pending WHERE chat_id = ? AND user_id = ?",
+            (chat_id, user_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def clear_param_pending(chat_id, user_id):
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "DELETE FROM param_pending WHERE chat_id = ? AND user_id = ?",
+            (chat_id, user_id),
+        )
+        conn.commit()
+
+
+def purge_expired_param_pending(older_than):
+    """Delete pending prompts with created_at older than the given monotonic/unix cutoff."""
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "DELETE FROM param_pending WHERE created_at < ?",
+            (older_than,),
         )
         conn.commit()

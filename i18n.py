@@ -61,6 +61,7 @@ STRINGS = {
         "q_left": "Removed from queue. You were #{pos}.",
         "usage_setname": "Usage: /setname <name>\nExample: /setname Amir Abu Yunus",
         "prompt_setname": "Enter your display name:",
+        "prompt_expired": "That prompt expired. Send the command again (e.g. /setname).",
         "setname_set": "Display name set to {name}.",
         "setname_too_long": "Name too long (max 60 characters).",
         # config commands
@@ -135,6 +136,7 @@ STRINGS = {
         "q_left": "Убран из очереди. Ты был(а) #{pos}.",
         "usage_setname": "Использование: /setname <имя>\nПример: /setname Амир Абу Юнус",
         "prompt_setname": "Введите имя в очереди:",
+        "prompt_expired": "Запрос устарел. Отправьте команду снова (например /setname).",
         "setname_set": "Имя в очереди: {name}.",
         "setname_too_long": "Слишком длинное имя (макс. 60 символов).",
         # config commands

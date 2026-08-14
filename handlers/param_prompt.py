@@ -6,42 +6,30 @@ import time
 from telegram import ForceReply, Update
 from telegram.ext import ContextTypes
 
+import db
+
 logger = logging.getLogger(__name__)
 
 PENDING_TTL_SECONDS = 600  # 10 minutes
 
-# (chat_id, user_id) -> {command, prompt_message_id, created_at}
-_pending: dict[tuple[int, int], dict] = {}
 
-
-def _purge_expired(now: float | None = None) -> None:
-    now = time.monotonic() if now is None else now
-    expired = [
-        key
-        for key, entry in _pending.items()
-        if now - entry["created_at"] > PENDING_TTL_SECONDS
-    ]
-    for key in expired:
-        _pending.pop(key, None)
+def _purge_expired() -> None:
+    db.purge_expired_param_pending(time.time() - PENDING_TTL_SECONDS)
 
 
 def get_pending(chat_id: int, user_id: int) -> dict | None:
     """Return pending entry for (chat_id, user_id), or None if missing/expired."""
     _purge_expired()
-    return _pending.get((chat_id, user_id))
+    return db.get_param_pending(chat_id, user_id)
 
 
 def clear_pending(chat_id: int, user_id: int) -> None:
-    _pending.pop((chat_id, user_id), None)
+    db.clear_param_pending(chat_id, user_id)
 
 
 def set_pending(chat_id: int, user_id: int, command: str, prompt_message_id: int) -> None:
     _purge_expired()
-    _pending[(chat_id, user_id)] = {
-        "command": command,
-        "prompt_message_id": prompt_message_id,
-        "created_at": time.monotonic(),
-    }
+    db.set_param_pending(chat_id, user_id, command, prompt_message_id, time.time())
 
 
 async def start_param_prompt(
@@ -55,13 +43,26 @@ async def start_param_prompt(
     user = update.effective_user
     if not chat or not user or not update.effective_message:
         return
-    # Replace any previous pending prompt for this user in this chat.
     clear_pending(chat.id, user.id)
+    # Mention + reply-to-user so ForceReply(selective=True) targets only this member.
+    if user.username:
+        text = f"@{user.username}\n{prompt_text}"
+    else:
+        text = f"{user.mention_html()}\n{prompt_text}"
+    parse_mode = None if user.username else "HTML"
     msg = await update.effective_message.reply_text(
-        prompt_text,
-        reply_markup=ForceReply(selective=True, input_field_placeholder=prompt_text[:64]),
+        text,
+        parse_mode=parse_mode,
+        reply_markup=ForceReply(
+            selective=True,
+            input_field_placeholder=prompt_text[:64],
+        ),
     )
     set_pending(chat.id, user.id, command, msg.message_id)
+    logger.info(
+        "param prompt started command=%s chat=%s user=%s prompt_msg=%s",
+        command, chat.id, user.id, msg.message_id,
+    )
 
 
 async def delete_prompt_best_effort(bot, chat_id: int, prompt_message_id: int) -> None:

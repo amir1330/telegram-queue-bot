@@ -16,7 +16,7 @@ from handlers.helpers import (
 )
 from handlers.param_prompt import start_param_prompt
 from i18n import tr
-from message_builder import day_long, format_lesson_line, setlesson_day_markup
+from message_builder import day_long, setlesson_day_markup
 from queue_view import DAYS_EN, DAYS_RU
 
 logger = logging.getLogger(__name__)
@@ -142,7 +142,15 @@ async def _save_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE, day_o
     if scheduler:
         scheduler.schedule_lesson(lesson)
     await reply_ephemeral(
-        update, context, tr(lang, "lesson_set", lesson=format_lesson_line(lesson, lang))
+        update,
+        context,
+        tr(
+            lang,
+            "lesson_set",
+            day=day_long(lang, lesson["day_of_week"]),
+            time=lesson["lesson_time"],
+            ob=lesson["open_before_min"],
+        ),
     )
     return True
 

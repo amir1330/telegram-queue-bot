@@ -21,6 +21,7 @@ STRINGS = {
     "en": {
         # queue message
         "queue_title": "<b>Lesson Queue</b>",
+        "queue_title_closed": "<b>Lesson Queue</b> (closed)",
         "queue_when": "{day} {time}",
         # buttons
         "btn_join": "Join",
@@ -104,6 +105,7 @@ STRINGS = {
     "ru": {
         # queue message
         "queue_title": "<b>Очередь на урок</b>",
+        "queue_title_closed": "<b>Очередь на урок</b> (закрыта)",
         "queue_when": "{day} {time}",
         # buttons
         "btn_join": "Встать",

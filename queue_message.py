@@ -10,9 +10,9 @@ from message_builder import build_queue_text, queue_markup
 async def refresh_queue_message(bot: Bot, chat_id, lesson_id, session_date, lang="en"):
     """Re-read the queue and edit the stored pinned message in place.
 
-    If the message was deleted (or we lack rights), drop the active-message
-    row so a later refresh does not keep failing. The queue is joinable until
-    the delete job runs, so buttons always stay on.
+    Open sessions keep Join/Leave buttons; closed sessions keep the final list
+    but with buttons removed. If the message is gone (or we lack rights), drop
+    the active-message row so a later refresh does not keep failing.
     """
     row = db.get_active_message(chat_id, lesson_id, session_date)
     if row is None:
@@ -22,11 +22,15 @@ async def refresh_queue_message(bot: Bot, chat_id, lesson_id, session_date, lang
         db.delete_active_message(chat_id, lesson_id, session_date)
         return
 
+    closed = row.get("status") == "closed"
     text = build_queue_text(
-        lesson, session_date, db.get_queue(chat_id, lesson_id, session_date),
+        lesson,
+        session_date,
+        db.get_queue(chat_id, lesson_id, session_date),
         lang=lang,
+        closed=closed,
     )
-    markup = queue_markup(lang)
+    markup = None if closed else queue_markup(lang)
 
     try:
         await bot.edit_message_text(

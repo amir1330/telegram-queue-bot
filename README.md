@@ -18,7 +18,7 @@ students join/leave, closes it at lesson time, and cleans it up afterwards.
 - `before` minutes before a lesson the bot pins a queue message; students join
   and leave by tapping the buttons under it (or with `/queue`, `/leave`).
 - The queue keeps accepting joins until `duration` minutes after the lesson
-  starts, then the message is deleted.
+  starts, then buttons turn off and the message is unpinned (the list stays).
 - All state is scoped per chat and persisted in SQLite; on restart the bot
   re-registers every scheduled job from the DB.
 
@@ -110,8 +110,8 @@ Required for the CI/CD workflow (repo → Settings → Secrets → Actions):
 ## Notes / design decisions
 
 - The queue opens `before` minutes before the lesson and keeps accepting joins
-  until `duration` minutes after the lesson starts. No intermediate "closed"
-  state.
+  until `duration` minutes after the lesson starts. Then the list stays in
+  chat (buttons off, unpinned) — it is not deleted.
 - Users can override the name shown in the queue with `/setname` — handy when
   two students share a first name. In groups, bare `/setname` (and other
   parametric commands) use a selective ForceReply so only the caller is

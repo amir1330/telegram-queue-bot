@@ -77,9 +77,9 @@ def format_lesson_line(lesson, lang="en"):
     )
 
 
-def build_queue_text(lesson, session_date, entries, lang="en"):
+def build_queue_text(lesson, session_date, entries, lang="en", closed=False):
     """HTML body for the pinned queue message: title, time, and the joined list."""
-    title = tr(lang, "queue_title")
+    title = tr(lang, "queue_title_closed" if closed else "queue_title")
     when = tr(lang, "queue_when", day=day_long(lang, lesson["day_of_week"]), time=lesson["lesson_time"])
 
     lines = [

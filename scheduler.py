@@ -1,11 +1,11 @@
-"""APScheduler integration: auto open/close/cleanup per lesson.
+"""APScheduler integration: auto open/close per lesson.
 
 One lesson row maps to two cron jobs with predictable ids:
   open_{chat_id}_{lesson_id}    at lesson_time - open_before_min
   delete_{chat_id}_{lesson_id}  at lesson_time + lifetime_min
 
-The queue stays joinable (buttons on) from open until the delete job
-deletes the message; there is no "closed" intermediate state.
+The queue stays joinable (buttons on) from open until the close job runs.
+At lifetime end the list stays in chat: buttons off, message unpinned.
 """
 
 import logging
@@ -18,7 +18,7 @@ import db
 from message_builder import build_queue_text, queue_markup
 from queue_message import refresh_queue_message
 from queue_view import DAY_INDEX
-from timezone import chat_now, chat_today, chat_tz
+from timezone import chat_now, chat_tz
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class QueueScheduler:
             replace_existing=True, misfire_grace_time=3600,
         )
         self.scheduler.add_job(
-            self.cleanup_queue, delete_trig,
+            self.close_queue, delete_trig,
             args=[chat_id, lesson_id],
             id=f"{DELETE_PREFIX}_{chat_id}_{lesson_id}",
             replace_existing=True, misfire_grace_time=3600,
@@ -108,7 +108,10 @@ class QueueScheduler:
 
     def unschedule_lesson(self, chat_id, lesson_id):
         for prefix in (OPEN_PREFIX, DELETE_PREFIX):
-            self.scheduler.remove_job(f"{prefix}_{chat_id}_{lesson_id}")
+            try:
+                self.scheduler.remove_job(f"{prefix}_{chat_id}_{lesson_id}")
+            except Exception:
+                pass
 
     # --------------------------------------------------- job callbacks
 
@@ -120,7 +123,11 @@ class QueueScheduler:
         session_date = (
             chat_now(chat_id) + timedelta(minutes=lesson["open_before_min"])
         ).date().isoformat()
-        if db.get_active_message(chat_id, lesson_id, session_date):
+        existing = db.get_active_message(chat_id, lesson_id, session_date)
+        if existing and existing.get("status") == "open":
+            return
+        if existing and existing.get("status") == "closed":
+            # New week/session should not reuse a closed message from the same date.
             return
         text = build_queue_text(lesson, session_date, [], lang=lang)
         try:
@@ -139,7 +146,8 @@ class QueueScheduler:
         db.save_active_message(chat_id, lesson_id, session_date, msg.message_id, "open")
         await refresh_queue_message(self.bot, chat_id, lesson_id, session_date, lang=lang)
 
-    async def cleanup_queue(self, chat_id, lesson_id):
+    async def close_queue(self, chat_id, lesson_id):
+        """End the join window: unpin, drop buttons, keep the final list in chat."""
         lesson = db.get_lesson_by_id(lesson_id)
         if not lesson:
             return
@@ -149,20 +157,21 @@ class QueueScheduler:
         row = db.get_active_message(chat_id, lesson_id, session_date)
         if not row:
             return
+        if row.get("status") == "closed":
+            return
+
+        lang = db.get_chat_lang(chat_id)
+        db.mark_active_closed(chat_id, lesson_id, session_date)
+
         try:
             await self.bot.unpin_chat_message(
                 chat_id=chat_id, message_id=row["message_id"]
             )
         except Exception as exc:
-            logger.warning("cleanup_queue: unpin failed in %s: %s", chat_id, exc)
-        try:
-            await self.bot.delete_message(
-                chat_id=chat_id, message_id=row["message_id"]
-            )
-        except Exception as exc:
-            logger.warning("cleanup_queue: delete failed in %s: %s", chat_id, exc)
-        db.delete_active_message(chat_id, lesson_id, session_date)
-        db.clear_queue(chat_id, lesson_id, session_date)
+            logger.warning("close_queue: unpin failed in %s: %s", chat_id, exc)
+
+        # Final edit: list stays, buttons gone, title marked closed.
+        await refresh_queue_message(self.bot, chat_id, lesson_id, session_date, lang=lang)
 
     # ------------------------------------------------------------ restore
 
@@ -179,6 +188,8 @@ class QueueScheduler:
         for lesson in db.get_all_lessons():
             self.schedule_lesson(lesson)
         for row in db.get_active_messages():
+            if row.get("status") == "closed":
+                continue
             lesson = db.get_lesson_by_id(row["lesson_id"])
             if lesson is None:
                 continue
@@ -186,6 +197,8 @@ class QueueScheduler:
                 session_date = date.fromisoformat(row["session_date"])
             except ValueError:
                 continue
-            cleanup_dt, _ = self._occurrence(lesson, session_date)
+            # Bugfix: previously compared against lesson_start (first value),
+            # which closed queues as soon as the lesson began — ignoring lifetime.
+            _, cleanup_dt = self._occurrence(lesson, session_date)
             if chat_now(row["chat_id"]) >= cleanup_dt:
-                await self.cleanup_queue(row["chat_id"], row["lesson_id"])
+                await self.close_queue(row["chat_id"], row["lesson_id"])

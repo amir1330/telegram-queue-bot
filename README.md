@@ -40,6 +40,7 @@ students join/leave, closes it at lesson time, and cleans it up afterwards.
 | `/duration [day] <min>` | minutes after lesson start the queue keeps accepting joins (default 120) |
 | `/delete Monday` | remove a lesson (English or Russian day names work) |
 | `/tz` | set the chat's timezone (IANA name or UTC+HH:MM) |
+| `/ping` | mention known members who are not in the open queue |
 
 Config changes apply to the scheduler immediately — no restart needed.
 

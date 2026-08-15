@@ -35,6 +35,7 @@ ADMIN_COMMANDS = [
     ("duration", "Сколько минут список живёт после урока / List lifetime minutes"),
     ("delete", "Удалить урок для дня / Remove a lesson"),
     ("tz", "Часовой пояс чата / Chat timezone"),
+    ("ping", "Тегнуть тех, кто не в очереди / Ping not in queue"),
 ]
 
 

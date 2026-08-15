@@ -61,6 +61,14 @@ CREATE TABLE IF NOT EXISTS user_names (
     PRIMARY KEY (chat_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS known_users (
+    chat_id INTEGER,
+    user_id INTEGER,
+    display_name TEXT,
+    last_seen TEXT,
+    PRIMARY KEY (chat_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS chat_state (
     chat_id INTEGER PRIMARY KEY,
     last_lesson_id INTEGER
@@ -400,6 +408,54 @@ def get_user_display_name(chat_id, user_id):
             (chat_id, user_id),
         ).fetchone()
         return row["display_name"] if row else None
+
+
+def touch_known_user(chat_id, user_id, display_name=None):
+    """Remember a user we have seen in this chat (for /ping mentions)."""
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "INSERT INTO known_users (chat_id, user_id, display_name, last_seen) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(chat_id, user_id) DO UPDATE SET "
+            "display_name = COALESCE(excluded.display_name, known_users.display_name), "
+            "last_seen = excluded.last_seen",
+            (chat_id, user_id, display_name, _now()),
+        )
+        conn.commit()
+
+
+def get_known_users(chat_id):
+    """Users the bot has seen in this chat (known_users + queue history + setnames)."""
+    with _LOCK:
+        conn = _connect()
+        rows = conn.execute(
+            "SELECT user_id, MAX(display_name) AS display_name FROM ("
+            "  SELECT user_id, display_name FROM known_users WHERE chat_id = ? "
+            "  UNION ALL "
+            "  SELECT user_id, display_name FROM user_names WHERE chat_id = ? "
+            "  UNION ALL "
+            "  SELECT user_id, display_name FROM queue_entries WHERE chat_id = ?"
+            ") GROUP BY user_id ORDER BY user_id",
+            (chat_id, chat_id, chat_id),
+        ).fetchall()
+        out = []
+        for r in rows:
+            uid = r["user_id"]
+            custom = conn.execute(
+                "SELECT display_name FROM user_names WHERE chat_id = ? AND user_id = ?",
+                (chat_id, uid),
+            ).fetchone()
+            out.append(
+                {
+                    "user_id": uid,
+                    "display_name": (
+                        custom["display_name"] if custom else r["display_name"]
+                    )
+                    or str(uid),
+                }
+            )
+        return out
 
 
 # -------------------------------------------------------- active messages

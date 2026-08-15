@@ -42,6 +42,7 @@ async def _do_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lesson_id = session["lesson_id"]
 
     name = display_name(user, chat.id)
+    db.touch_known_user(chat.id, user.id, name)
     entry = db.add_queue_entry(chat.id, lesson_id, user.id, name, sdate)
     pos = db.position_of(chat.id, lesson_id, sdate, user.id)
     if entry is None:

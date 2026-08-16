@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 import db
-from handlers.helpers import cleanup_trigger, is_admin, is_group, reply_ephemeral
+from handlers.helpers import TRIGGER_DELETE_SECONDS, cleanup_trigger, is_admin, is_group, reply_ephemeral
 from i18n import tr
 
 # Keep each ping message under Telegram's limit with room for the header.
@@ -76,7 +76,7 @@ async def cmd_ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     header = tr(lang, "ping_header", n=len(mentions))
     parts = _chunks(mentions)
 
-    await cleanup_trigger(update, context, seconds=0)
+    await cleanup_trigger(update, context, seconds=TRIGGER_DELETE_SECONDS)
     for i, body in enumerate(parts):
         text = f"{header}\n{body}" if i == 0 else body
         await update.effective_message.reply_text(text, parse_mode="HTML")

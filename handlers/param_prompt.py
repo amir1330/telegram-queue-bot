@@ -7,7 +7,7 @@ from telegram import ForceReply, Update
 from telegram.ext import ContextTypes
 
 import db
-from handlers.helpers import cleanup_trigger, is_group
+from handlers.helpers import TRIGGER_DELETE_SECONDS, cleanup_trigger, is_group
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ async def start_param_prompt(
     clear_pending(chat.id, user.id)
     # Remove the triggering /command in groups (not callback button messages).
     if is_group(update) and not update.callback_query:
-        await cleanup_trigger(update, context, seconds=0)
+        await cleanup_trigger(update, context, seconds=TRIGGER_DELETE_SECONDS)
 
     # Mention the caller so ForceReply(selective=True) targets only them.
     # Also tell them they can just type the answer (works when privacy is off

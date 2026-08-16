@@ -467,6 +467,50 @@ async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply_ephemeral(update, context, tr(lang, "admin_only"))
         return
     if not context.args:
-        await start_param_prompt(update, context, "delete", tr(lang, "prompt_delete"))
+        lessons = db.get_lessons(chat.id)
+        if not lessons:
+            await reply_ephemeral(update, context, tr(lang, "no_lesson_yet"))
+            return
+        await reply_keep(
+            update,
+            context,
+            tr(lang, "prompt_delete_day"),
+            reply_markup=lesson_days_markup(lang, lessons, "delete_day"),
+        )
         return
     await apply_delete(update, context, context.args)
+
+
+async def cb_delete_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin picked a lesson day for /delete — remove it immediately."""
+    query = update.callback_query
+    chat = query.message.chat if query.message else None
+    user = query.from_user
+    if not chat or not user:
+        await query.answer()
+        return
+    lang = db.get_chat_lang(chat.id)
+    if not await is_admin(update, chat.id, user.id):
+        await query.answer(text=tr(lang, "toast_admins_only"), show_alert=True)
+        return
+
+    day_of_week = (query.data or "").removeprefix("delete_day_")
+    if day_of_week not in DAYS_EN:
+        await query.answer()
+        return
+
+    await query.answer()
+    ok = await apply_delete(update, context, [day_of_week])
+    if ok:
+        try:
+            await query.message.delete()
+        except Exception:
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+    else:
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass

@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 ADMIN_STATUSES = ("administrator", "creator")
 
 AUTO_DELETE_SECONDS = 30
+# Delay before removing the user's command/answer. Instant deletes race with
+# desktop Telegram ForceReply / delivery and can make /setname look ignored.
+TRIGGER_DELETE_SECONDS = 5
 
 
 async def delete_later(bot, chat_id, message_id, seconds=AUTO_DELETE_SECONDS):
@@ -36,7 +39,7 @@ def schedule_delete(bot, chat_id, message_id, seconds=AUTO_DELETE_SECONDS):
 async def cleanup_trigger(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    seconds: float = 0,
+    seconds: float = TRIGGER_DELETE_SECONDS,
 ) -> None:
     """Delete the user message that triggered this update (groups only).
 
@@ -63,7 +66,7 @@ async def reply_ephemeral(
 ):
     """Reply, auto-delete the bot reply, and (in groups) the user trigger message."""
     if delete_trigger:
-        await cleanup_trigger(update, context, seconds=0)
+        await cleanup_trigger(update, context, seconds=TRIGGER_DELETE_SECONDS)
     kwargs = {}
     if parse_mode is not None:
         kwargs["parse_mode"] = parse_mode
@@ -88,7 +91,7 @@ async def reply_keep(
     Still removes the user command in groups so the chat stays clean.
     """
     if delete_trigger:
-        await cleanup_trigger(update, context, seconds=0)
+        await cleanup_trigger(update, context, seconds=TRIGGER_DELETE_SECONDS)
     kwargs = {}
     if parse_mode is not None:
         kwargs["parse_mode"] = parse_mode

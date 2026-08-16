@@ -19,6 +19,7 @@ import db
 from command_menu import sync_all_chats, sync_commands_for_chat
 from handlers.buttons import on_button
 from handlers.config_handlers import (
+    cb_delete_day,
     cb_setlesson_day,
     cb_window_day,
     cmd_before,
@@ -26,7 +27,7 @@ from handlers.config_handlers import (
     cmd_duration,
     cmd_setlesson,
 )
-from handlers.helpers import cleanup_trigger, is_admin, is_group, schedule_delete
+from handlers.helpers import TRIGGER_DELETE_SECONDS, cleanup_trigger, is_admin, is_group, schedule_delete
 from handlers.info_handler import cmd_info
 from handlers.param_reply import on_param_reply
 from handlers.ping_handler import cmd_ping
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 async def cmd_start(update: Update, context):
     chat = update.effective_chat
     lang = db.get_chat_lang(chat.id) if chat else "en"
-    await cleanup_trigger(update, context, seconds=0)
+    await cleanup_trigger(update, context, seconds=TRIGGER_DELETE_SECONDS)
     msg = await update.effective_message.reply_text(
         welcome_text(lang), parse_mode="HTML"
     )
@@ -64,7 +65,7 @@ async def cmd_lang(update: Update, context):
         from handlers.helpers import reply_ephemeral
         await reply_ephemeral(update, context, tr(lang, "admin_only"))
         return
-    await cleanup_trigger(update, context, seconds=0)
+    await cleanup_trigger(update, context, seconds=TRIGGER_DELETE_SECONDS)
     msg = await update.effective_message.reply_text(
         tr(lang, "lang_prompt"), parse_mode="HTML", reply_markup=lang_markup(lang)
     )
@@ -155,6 +156,7 @@ def main():
     application.add_handler(
         CallbackQueryHandler(cb_window_day, pattern="^(before_day_|duration_day_)")
     )
+    application.add_handler(CallbackQueryHandler(cb_delete_day, pattern="^delete_day_"))
     application.add_handler(CallbackQueryHandler(on_button, pattern="^(join|leave)$"))
     application.add_handler(ChatMemberHandler(on_bot_added, ChatMemberHandler.ANY_CHAT_MEMBER))
     application.add_handler(

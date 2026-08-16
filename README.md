@@ -66,6 +66,9 @@ One-shot `/setname <name>` still applies immediately.
 
 - Add the bot and promote it to **admin** with **Pin messages** and **Delete
   messages** rights (the bot tells you if it lacks them).
+- In **@BotFather** → your bot → **Group Privacy** → **Turn off**. Otherwise
+  Telegram hides normal group messages from the bot, and after `/setlesson`
+  typing `23:00` without Reply does nothing.
 - Set the chat's timezone once with `/tz` so lesson times and cron jobs match
   your local time. If unset, the bot uses the server's local time.
 

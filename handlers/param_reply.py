@@ -1,10 +1,16 @@
-"""Complete ForceReply parameter prompts for parametric commands.
+"""Complete parameter prompts for parametric commands.
 
-Only accepts a reply *to the bot's prompt message*. Bare chat text is ignored
-so normal conversation is never treated as a command answer or deleted.
+Accepts:
+- a reply to the bot's prompt, or
+- a top-level message from the same (chat_id, user_id) while pending,
+  but only if the text looks like an answer (so normal chat is ignored).
+
+Note: in groups with Bot Privacy Mode ON, Telegram may not deliver bare
+text to the bot at all — then a Reply (or disabling privacy) is required.
 """
 
 import logging
+import re
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -39,25 +45,60 @@ _APPLY = {
     "delete": apply_delete,
 }
 
+_TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
+
+
+def _looks_like_answer(command: str, text: str) -> bool:
+    """True if bare chat text is short/shaped like a param answer, not free chat."""
+    text = (text or "").strip()
+    if not text or "\n" in text:
+        return False
+    if command == "setlesson_time":
+        return bool(_TIME_RE.match(text))
+    if command == "setname":
+        return 0 < len(text) <= 60
+    if command in ("before", "duration"):
+        parts = text.split()
+        if len(parts) == 1:
+            return parts[0].isdigit()
+        if len(parts) == 2:
+            return parts[1].isdigit()
+        return False
+    if command == "delete":
+        return len(text.split()) == 1 and len(text) <= 40
+    if command == "setlesson":
+        parts = text.split()
+        return len(parts) >= 2 and bool(_TIME_RE.match(parts[-1]))
+    return len(text) <= 80
+
+
+def _is_bot_message(message, bot_id: int) -> bool:
+    return bool(message and message.from_user and message.from_user.id == bot_id)
+
 
 async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle a reply to the bot's ForceReply prompt only."""
+    """Complete a pending prompt from a reply or a short follow-up message."""
     chat = update.effective_chat
     user = update.effective_user
     message = update.effective_message
     if not chat or not user or not message or not message.text:
         return
 
-    replied = message.reply_to_message
-    if replied is None:
-        return  # never consume top-level chat messages
-
     pending = get_pending(chat.id, user.id)
     if pending is None:
-        return  # stale reply to an old bot message — ignore silently
+        return
 
-    if replied.message_id != pending["prompt_message_id"]:
-        return  # replied to something else — leave chat alone
+    replied = message.reply_to_message
+    if replied is not None:
+        # Reply to our prompt, or to any bot message while pending.
+        if replied.message_id != pending["prompt_message_id"] and not _is_bot_message(
+            replied, context.bot.id
+        ):
+            return
+    else:
+        # Bare chat text: only if it looks like the expected answer.
+        if not _looks_like_answer(pending["command"], message.text):
+            return
 
     command = pending["command"]
     if command in _ADMIN_COMMANDS:
@@ -68,8 +109,8 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = message.text.split()
     logger.info(
-        "param reply apply command=%s chat=%s user=%s args=%r payload=%r",
-        command, chat.id, user.id, args, pending.get("payload"),
+        "param reply apply command=%s chat=%s user=%s args=%r payload=%r reply=%s",
+        command, chat.id, user.id, args, pending.get("payload"), replied is not None,
     )
 
     ui_message_id = None

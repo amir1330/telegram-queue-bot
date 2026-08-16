@@ -48,7 +48,7 @@ async def start_param_prompt(
     prompt_text: str,
     payload: str | None = None,
 ) -> None:
-    """Reply with selective ForceReply and store pending state for this user."""
+    """Ask for a parameter via ForceReply and remember pending state for this user."""
     chat = update.effective_chat
     user = update.effective_user
     if not chat or not user or not update.effective_message:
@@ -57,13 +57,25 @@ async def start_param_prompt(
     # Remove the triggering /command in groups (not callback button messages).
     if is_group(update) and not update.callback_query:
         await cleanup_trigger(update, context, seconds=0)
-    # Mention + reply-to-user so ForceReply(selective=True) targets only this member.
+
+    # Mention the caller so ForceReply(selective=True) targets only them.
+    # Also tell them they can just type the answer (works when privacy is off
+    # or when the client attaches a reply automatically).
     if user.username:
         text = f"@{user.username}\n{prompt_text}"
+        parse_mode = None
     else:
         text = f"{user.mention_html()}\n{prompt_text}"
-    parse_mode = None if user.username else "HTML"
-    msg = await update.effective_message.reply_text(
+        parse_mode = "HTML"
+
+    # Prefer sending after a button tap from that message; otherwise reply
+    # to the user's command so ForceReply binds to them more reliably.
+    if update.callback_query and update.callback_query.message:
+        send = update.callback_query.message.reply_text
+    else:
+        send = update.effective_message.reply_text
+
+    msg = await send(
         text,
         parse_mode=parse_mode,
         reply_markup=ForceReply(

@@ -66,6 +66,23 @@ def setlesson_day_markup(lang="en"):
     return InlineKeyboardMarkup(rows)
 
 
+def lesson_days_markup(lang, lessons, prefix):
+    """Day buttons only for configured lessons (e.g. before_day / duration_day)."""
+    ordered = sorted(lessons, key=lambda l: DAY_INDEX.get(l["day_of_week"], 99))
+    rows = []
+    row = []
+    for lesson in ordered:
+        key = lesson["day_of_week"]
+        label = f"{day_long(lang, key)} {lesson['lesson_time']}"
+        row.append(InlineKeyboardButton(label, callback_data=f"{prefix}_{key}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(rows)
+
+
 def format_lesson_line(lesson, lang="en"):
     """One-line lesson summary, e.g. 'Monday 23:00 — opens 30 min before, accepts joins for 60 min'."""
     return (

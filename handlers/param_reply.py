@@ -128,6 +128,12 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
             clear_pending(chat.id, user.id)
             return
         ok = await apply_setlesson_time(update, context, args, day)
+    elif command in ("before", "duration") and pending.get("payload"):
+        day, ui_message_id = parse_setlesson_payload(pending.get("payload"))
+        if day and len(args) == 1:
+            args = [day, args[0]]
+        apply_fn = _APPLY[command]
+        ok = await apply_fn(update, context, args)
     else:
         apply_fn = _APPLY.get(command)
         if apply_fn is None:

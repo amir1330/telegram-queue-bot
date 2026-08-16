@@ -16,7 +16,7 @@ from handlers.helpers import (
 )
 from handlers.param_prompt import start_param_prompt
 from i18n import tr
-from message_builder import day_long, setlesson_day_markup
+from message_builder import day_long, lesson_days_markup, setlesson_day_markup
 from queue_view import DAYS_EN, DAYS_RU
 
 logger = logging.getLogger(__name__)
@@ -256,12 +256,84 @@ async def _window_command(update: Update, context: ContextTypes.DEFAULT_TYPE, fi
         await reply_ephemeral(update, context, tr(lang, "admin_only"))
         return
 
-    command = "before" if field == "open_before_min" else "duration"
-    prompt_key = "prompt_before" if field == "open_before_min" else "prompt_duration"
     if not context.args:
-        await start_param_prompt(update, context, command, tr(lang, prompt_key))
+        lessons = db.get_lessons(chat.id)
+        if not lessons:
+            await reply_ephemeral(update, context, tr(lang, "no_lesson_yet"))
+            return
+        day_prompt = (
+            "prompt_before_day" if field == "open_before_min" else "prompt_duration_day"
+        )
+        prefix = "before_day" if field == "open_before_min" else "duration_day"
+        await reply_keep(
+            update,
+            context,
+            tr(lang, day_prompt),
+            reply_markup=lesson_days_markup(lang, lessons, prefix),
+        )
         return
     await apply_window(update, context, context.args, field=field)
+
+
+async def cb_window_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin picked a lesson day for /before or /duration — ask for minutes."""
+    query = update.callback_query
+    chat = query.message.chat if query.message else None
+    user = query.from_user
+    if not chat or not user:
+        await query.answer()
+        return
+    lang = db.get_chat_lang(chat.id)
+    if not await is_admin(update, chat.id, user.id):
+        await query.answer(text=tr(lang, "toast_admins_only"), show_alert=True)
+        return
+
+    data = query.data or ""
+    if data.startswith("before_day_"):
+        command = "before"
+        prompt_key = "prompt_before"
+        day_of_week = data[len("before_day_") :]
+    elif data.startswith("duration_day_"):
+        command = "duration"
+        prompt_key = "prompt_duration"
+        day_of_week = data[len("duration_day_") :]
+    else:
+        await query.answer()
+        return
+
+    if day_of_week not in DAYS_EN:
+        await query.answer()
+        return
+    lesson = next(
+        (l for l in db.get_lessons(chat.id) if l["day_of_week"] == day_of_week),
+        None,
+    )
+    if lesson is None:
+        await query.answer(text=tr(lang, "no_lesson_yet"), show_alert=True)
+        return
+
+    await query.answer()
+    try:
+        await query.edit_message_text(
+            tr(
+                lang,
+                "window_day_picked",
+                day=day_long(lang, day_of_week),
+                time=lesson["lesson_time"],
+            )
+        )
+    except Exception:
+        pass
+    payload = json.dumps(
+        {"day": day_of_week, "ui_message_id": query.message.message_id}
+    )
+    await start_param_prompt(
+        update,
+        context,
+        command,
+        tr(lang, prompt_key),
+        payload=payload,
+    )
 
 
 async def apply_window(
@@ -274,7 +346,6 @@ async def apply_window(
         return False
     lang = db.get_chat_lang(chat.id)
     cmd = "/before" if field == "open_before_min" else "/duration"
-    label_key = "label_before" if field == "open_before_min" else "label_duration"
 
     day_of_week = None
     value_text = None
@@ -314,12 +385,16 @@ async def apply_window(
     scheduler = context.bot_data.get("scheduler")
     if scheduler:
         scheduler.schedule_lesson(lesson)
+    set_key = "window_set_before" if field == "open_before_min" else "window_set_duration"
     await reply_ephemeral(
         update,
         context,
         tr(
-            lang, "window_set", label=tr(lang, label_key), value=value,
-            day=day_long(lang, lesson["day_of_week"]), time=lesson["lesson_time"],
+            lang,
+            set_key,
+            value=value,
+            day=day_long(lang, lesson["day_of_week"]),
+            time=lesson["lesson_time"],
         ),
     )
     return True

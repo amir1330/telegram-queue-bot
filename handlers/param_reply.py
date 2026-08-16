@@ -1,12 +1,11 @@
 """Complete parameter prompts for parametric commands.
 
-Accepts:
-- a reply to the bot's prompt, or
-- a top-level message from the same (chat_id, user_id) while pending,
-  but only if the text looks like an answer (so normal chat is ignored).
+While a prompt is pending for (chat_id, user_id), accept:
+- a reply to the bot's prompt message, or
+- any short answer-shaped text (bare or reply), so broken ForceReply
+  clients that attach reply_to the wrong parent still work.
 
-Note: in groups with Bot Privacy Mode ON, Telegram may not deliver bare
-text to the bot at all — then a Reply (or disabling privacy) is required.
+Long free-chat messages are ignored via shape checks.
 """
 
 import logging
@@ -49,7 +48,7 @@ _TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
 
 
 def _looks_like_answer(command: str, text: str) -> bool:
-    """True if bare chat text is short/shaped like a param answer, not free chat."""
+    """True if text is short/shaped like a param answer, not free chat."""
     text = (text or "").strip()
     if not text or "\n" in text:
         return False
@@ -72,10 +71,6 @@ def _looks_like_answer(command: str, text: str) -> bool:
     return len(text) <= 80
 
 
-def _is_bot_message(message, bot_id: int) -> bool:
-    return bool(message and message.from_user and message.from_user.id == bot_id)
-
-
 async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Complete a pending prompt from a reply or a short follow-up message."""
     chat = update.effective_chat
@@ -88,29 +83,42 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if pending is None:
         return
 
-    replied = message.reply_to_message
-    if replied is not None:
-        # Reply to our prompt, or to any bot message while pending.
-        if replied.message_id != pending["prompt_message_id"] and not _is_bot_message(
-            replied, context.bot.id
-        ):
-            return
-    else:
-        # Bare chat text: only if it looks like the expected answer.
-        if not _looks_like_answer(pending["command"], message.text):
-            return
-
     command = pending["command"]
+    text = message.text
+    replied = message.reply_to_message
+
+    # Some clients attach ForceReply to the wrong parent (e.g. the user's
+    # original /setname instead of the bot prompt). Accept either an exact
+    # reply to our prompt, or any answer-shaped text while pending.
+    is_reply_to_prompt = False
+    if replied is not None:
+        try:
+            is_reply_to_prompt = int(replied.message_id) == int(
+                pending["prompt_message_id"]
+            )
+        except (TypeError, ValueError):
+            is_reply_to_prompt = False
+
+    if not is_reply_to_prompt and not _looks_like_answer(command, text):
+        return
+
     if command in _ADMIN_COMMANDS:
         if not await is_admin(update, chat.id, user.id):
             await reply_ephemeral(update, context, tr(db.get_chat_lang(chat.id), "admin_only"))
             clear_pending(chat.id, user.id)
             return
 
-    args = message.text.split()
+    args = text.split()
     logger.info(
-        "param reply apply command=%s chat=%s user=%s args=%r payload=%r reply=%s",
-        command, chat.id, user.id, args, pending.get("payload"), replied is not None,
+        "param reply apply command=%s chat=%s user=%s args=%r payload=%r "
+        "reply_to_prompt=%s reply_to=%s",
+        command,
+        chat.id,
+        user.id,
+        args,
+        pending.get("payload"),
+        is_reply_to_prompt,
+        replied.message_id if replied else None,
     )
 
     ui_message_id = None

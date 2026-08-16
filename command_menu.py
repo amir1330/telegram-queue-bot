@@ -32,7 +32,7 @@ ADMIN_COMMANDS = [
     ("lang", "Язык / Language"),
     ("setlesson", "Задать урок: день и время / Set a lesson"),
     ("before", "За сколько минут до урока открыть очередь / Open-before minutes"),
-    ("duration", "Сколько минут список живёт после урока / List lifetime minutes"),
+    ("duration", "Очередь закроется спустя N мин / Queue closes after N min"),
     ("delete", "Удалить урок для дня / Remove a lesson"),
     ("tz", "Часовой пояс чата / Chat timezone"),
     ("ping", "Тегнуть тех, кто не в очереди / Ping not in queue"),

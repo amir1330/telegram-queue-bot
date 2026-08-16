@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 import db
-from handlers.helpers import cleanup_trigger, is_admin, is_group, reply_ephemeral, today
+from handlers.helpers import cleanup_trigger, is_admin, is_group, reply_ephemeral
 from i18n import tr
 
 # Keep each ping message under Telegram's limit with room for the header.
@@ -53,9 +53,7 @@ async def cmd_ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     db.touch_known_user(chat.id, user.id, user.first_name)
 
-    sessions = db.get_active_messages(
-        chat_id=chat.id, session_date=today(chat.id), status="open"
-    )
+    sessions = db.get_active_messages(chat_id=chat.id, status="open")
     if not sessions:
         await reply_ephemeral(update, context, tr(lang, "ping_no_open"))
         return

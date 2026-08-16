@@ -46,6 +46,10 @@ def main():
     lessons = db.get_lessons(chat_id)
     check("get_lessons returns all", len(lessons) == 1 and lessons[0]["lesson_time"] == "10:00")
     check("upsert updated time", lessons[0]["lesson_time"] == "10:00")
+    check(
+        "upsert preserves windows",
+        lessons[0]["open_before_min"] == 30 and lessons[0]["lifetime_min"] == 120,
+    )
 
     updated = db.update_lesson_window(lesson["lesson_id"], open_before_min=45)
     check("update_lesson_window", updated["open_before_min"] == 45)

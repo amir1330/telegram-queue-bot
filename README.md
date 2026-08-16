@@ -19,6 +19,8 @@ students join/leave, closes it at lesson time, and cleans it up afterwards.
   and leave by tapping the buttons under it (or with `/queue`, `/leave`).
 - The queue keeps accepting joins until `duration` minutes after the lesson
   starts, then buttons turn off and the message is unpinned (the list stays).
+  Windows that cross midnight (e.g. 23:00 → 01:00) work: the session is keyed
+  by the lesson's calendar day, not "today".
 - All state is scoped per chat and persisted in SQLite; on restart the bot
   re-registers every scheduled job from the DB.
 

@@ -205,7 +205,11 @@ def set_chat_timezone(chat_id, tz_name, title=None):
 # -------------------------------------------------------------- lessons
 
 def add_lesson(chat_id, day_of_week, lesson_time, open_before_min=30, lifetime_min=120, title=None):
-    """Insert or update the lesson for (chat, day_of_week). Returns the lesson row."""
+    """Insert or update the lesson for (chat, day_of_week). Returns the lesson row.
+
+    On update (same day already exists), only the time is changed — open_before
+    and lifetime are preserved so /setlesson does not wipe /before and /duration.
+    """
     add_chat(chat_id, title)
     with _LOCK:
         conn = _connect()
@@ -213,9 +217,7 @@ def add_lesson(chat_id, day_of_week, lesson_time, open_before_min=30, lifetime_m
             "INSERT INTO lessons (chat_id, day_of_week, lesson_time, open_before_min, lifetime_min) "
             "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(chat_id, day_of_week) DO UPDATE SET "
-            "lesson_time = excluded.lesson_time, "
-            "open_before_min = excluded.open_before_min, "
-            "lifetime_min = excluded.lifetime_min",
+            "lesson_time = excluded.lesson_time",
             (chat_id, day_of_week, lesson_time, open_before_min, lifetime_min),
         )
         conn.commit()

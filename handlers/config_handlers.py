@@ -339,18 +339,43 @@ async def apply_delete(update: Update, context: ContextTypes.DEFAULT_TYPE, args)
     if day_of_week is None:
         await reply_ephemeral(update, context, tr(lang, "invalid_day"))
         return False
+
+    lesson = next(
+        (l for l in db.get_lessons(chat.id) if l["day_of_week"] == day_of_week),
+        None,
+    )
+    if lesson is None:
+        await reply_ephemeral(
+            update, context, tr(lang, "no_lesson_day", day=day_long(lang, day_of_week))
+        )
+        return False
+
+    # Snapshot live messages before DB wipe so we can unpin / strip buttons.
+    actives = [
+        r for r in db.get_active_messages(chat_id=chat.id)
+        if r["lesson_id"] == lesson["lesson_id"]
+    ]
     removed_id = db.remove_lesson(chat.id, day_of_week)
     if removed_id is None:
         await reply_ephemeral(
             update, context, tr(lang, "no_lesson_day", day=day_long(lang, day_of_week))
         )
         return False
+
     scheduler = context.bot_data.get("scheduler")
     if scheduler:
         try:
             scheduler.unschedule_lesson(chat.id, removed_id)
         except Exception as exc:
             logger.warning("delete: unschedule failed: %s", exc)
+        for row in actives:
+            try:
+                await scheduler.discard_queue_message(
+                    chat.id, removed_id, row["session_date"], row["message_id"], lang=lang
+                )
+            except Exception as exc:
+                logger.warning("delete: discard message failed: %s", exc)
+
     await reply_ephemeral(
         update, context, tr(lang, "removed_lesson", day=day_long(lang, day_of_week))
     )

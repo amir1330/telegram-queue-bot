@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 import db
-from handlers.helpers import display_name, today
+from handlers.helpers import display_name
 from i18n import tr
 from queue_message import refresh_queue_message
 
@@ -27,20 +27,28 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
 
 
+def _session_for_message(chat_id, message_id, status="open"):
+    """Find the active session whose pinned message was clicked."""
+    sessions = db.get_active_messages(chat_id=chat_id, status=status)
+    match = next((s for s in sessions if s["message_id"] == message_id), None)
+    if match:
+        return match
+    return sessions[0] if sessions else None
+
+
 async def _do_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat = query.message.chat
     user = query.from_user
     lang = db.get_chat_lang(chat.id)
-    sdate = today(chat.id)
 
-    sessions = db.get_active_messages(chat_id=chat.id, session_date=sdate, status="open")
-    if not sessions:
+    session = _session_for_message(chat.id, query.message.message_id, status="open")
+    if session is None:
         await query.answer(text=tr(lang, "toast_queue_closed"), show_alert=True)
         return
-    session = sessions[0]
-    lesson_id = session["lesson_id"]
 
+    lesson_id = session["lesson_id"]
+    sdate = session["session_date"]
     name = display_name(user, chat.id)
     db.touch_known_user(chat.id, user.id, name)
     entry = db.add_queue_entry(chat.id, lesson_id, user.id, name, sdate)
@@ -59,10 +67,19 @@ async def _do_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = query.message.chat
     user = query.from_user
     lang = db.get_chat_lang(chat.id)
-    sdate = today(chat.id)
 
-    for session in db.get_active_messages(chat_id=chat.id, session_date=sdate):
-        lesson_id = session["lesson_id"]
+    # Prefer the message that was clicked (open or closed).
+    sessions = db.get_active_messages(chat_id=chat.id)
+    session = next(
+        (s for s in sessions if s["message_id"] == query.message.message_id), None
+    )
+    candidates = [session] if session else sessions
+
+    for sess in candidates:
+        if sess is None:
+            continue
+        lesson_id = sess["lesson_id"]
+        sdate = sess["session_date"]
         pos = db.position_of(chat.id, lesson_id, sdate, user.id)
         if pos is not None:
             db.remove_queue_entry(chat.id, lesson_id, user.id, sdate)

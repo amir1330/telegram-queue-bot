@@ -2,16 +2,29 @@
 
 import asyncio
 import logging
+import time
 
 from telegram import Update
-from telegram.constants import ChatType
+from telegram.constants import ChatMemberStatus, ChatType
 from telegram.ext import ContextTypes
 
 import db
+from i18n import tr
 
 logger = logging.getLogger(__name__)
 
-ADMIN_STATUSES = ("administrator", "creator")
+ADMIN_STATUSES = frozenset({
+    ChatMemberStatus.ADMINISTRATOR,
+    ChatMemberStatus.OWNER,
+    "administrator",
+    "creator",
+})
+# Telegram's hidden user when an admin has "Remain anonymous" on.
+TELEGRAM_ANONYMOUS_ADMIN_ID = 1087968824
+TELEGRAM_CHANNEL_BOT_ID = 136817688
+_ADMIN_CACHE_TTL = 60.0
+# chat_id -> (fetched_at, admin_user_ids)
+_admin_ids_cache: dict[int, tuple[float, set[int]]] = {}
 
 AUTO_DELETE_SECONDS = 30
 # Delay before removing the user's command/answer. Instant deletes race with
@@ -100,23 +113,109 @@ async def reply_keep(
     return await update.effective_message.reply_text(text, **kwargs)
 
 
-async def is_admin(update: Update, chat_id: int, user_id: int) -> bool:
-    """True if user_id is an admin/creator of chat. Never raises."""
+def _status_is_admin(status) -> bool:
+    value = getattr(status, "value", status)
+    return status in ADMIN_STATUSES or str(value).lower() in ADMIN_STATUSES
+
+
+def invalidate_admin_cache(chat_id: int | None = None) -> None:
+    """Drop cached admin ids (one chat, or all)."""
+    if chat_id is None:
+        _admin_ids_cache.clear()
+        return
+    _admin_ids_cache.pop(chat_id, None)
+
+
+async def _admin_ids(bot, chat_id: int) -> set[int] | None:
+    now = time.monotonic()
+    cached = _admin_ids_cache.get(chat_id)
+    if cached and now - cached[0] < _ADMIN_CACHE_TTL:
+        return cached[1]
     try:
-        member = await update.get_bot().get_chat_member(chat_id, user_id)
-        return member.status in ADMIN_STATUSES
-    except Exception:
+        admins = await bot.get_chat_administrators(chat_id)
+        ids = {a.user.id for a in admins if getattr(a, "user", None)}
+        _admin_ids_cache[chat_id] = (now, ids)
+        return ids
+    except Exception as exc:
+        logger.warning("get_chat_administrators failed chat=%s: %s", chat_id, exc)
+        return None
+
+
+def _is_anonymous_admin_update(update: Update, chat_id: int, user_id: int) -> bool:
+    """True when an admin is posting as the group (Remain anonymous)."""
+    user = update.effective_user
+    message = update.effective_message
+    sender_chat = getattr(message, "sender_chat", None) if message else None
+    if sender_chat is not None and sender_chat.id == chat_id:
+        return True
+    if user_id in (TELEGRAM_ANONYMOUS_ADMIN_ID, TELEGRAM_CHANNEL_BOT_ID):
+        # Channel_Bot is only an admin if they posted as this chat, handled above.
+        return user_id == TELEGRAM_ANONYMOUS_ADMIN_ID
+    username = (getattr(user, "username", None) or "").lower()
+    return username == "groupanonymousbot"
+
+
+async def is_admin(update: Update, chat_id: int, user_id: int) -> bool:
+    """True if this update is from a chat admin/creator. Never raises.
+
+    Anonymous admins post as GroupAnonymousBot (or sender_chat = the group),
+    so looking up user_id in getChatMember would wrongly fail.
+    """
+    if _is_anonymous_admin_update(update, chat_id, user_id):
+        return True
+    if not user_id:
         return False
+
+    bot = update.get_bot()
+    admin_ids = await _admin_ids(bot, chat_id)
+    if admin_ids is not None:
+        ok = user_id in admin_ids
+        if not ok:
+            user = update.effective_user
+            logger.info(
+                "admin denied chat=%s user=%s username=%s known_admins=%s",
+                chat_id,
+                user_id,
+                getattr(user, "username", None),
+                sorted(admin_ids),
+            )
+        return ok
+
+    try:
+        member = await bot.get_chat_member(chat_id, user_id)
+        ok = _status_is_admin(member.status)
+        if not ok:
+            logger.info(
+                "admin denied chat=%s user=%s status=%s",
+                chat_id,
+                user_id,
+                member.status,
+            )
+        return ok
+    except Exception as exc:
+        logger.warning("get_chat_member failed chat=%s user=%s: %s", chat_id, user_id, exc)
+        return False
+
+
+async def require_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """True if this command was sent in a group. Otherwise explain and return False."""
+    if is_group(update) and update.effective_chat and update.effective_user:
+        return True
+    chat = update.effective_chat
+    lang = db.get_chat_lang(chat.id) if chat else "en"
+    await reply_ephemeral(update, context, tr(lang, "group_only"))
+    return False
 
 
 async def bot_has_pin_rights(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> bool:
     """True if the bot can pin/delete messages in the chat (or is creator)."""
     try:
         me = await context.bot.get_chat_member(chat_id, context.bot.id)
-        if me.status == "creator":
+        status_value = str(getattr(me.status, "value", me.status)).lower()
+        if status_value in ("creator", "owner"):
             return True
         return (
-            me.status == "administrator"
+            _status_is_admin(me.status)
             and me.can_pin_messages is True
             and me.can_delete_messages is True
         )

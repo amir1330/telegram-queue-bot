@@ -27,7 +27,14 @@ from handlers.config_handlers import (
     cmd_duration,
     cmd_setlesson,
 )
-from handlers.helpers import TRIGGER_DELETE_SECONDS, cleanup_trigger, is_admin, is_group, schedule_delete
+from handlers.helpers import (
+    TRIGGER_DELETE_SECONDS,
+    cleanup_trigger,
+    invalidate_admin_cache,
+    is_admin,
+    is_group,
+    schedule_delete,
+)
 from handlers.info_handler import cmd_info
 from handlers.param_reply import on_param_reply
 from handlers.ping_handler import cmd_ping
@@ -96,29 +103,25 @@ async def cb_lang(update: Update, context):
     schedule_delete(context.bot, query.message.chat_id, query.message.message_id)
 
 
-async def on_bot_added(update: Update, context):
-    """Welcome message when the bot is added to a group; sync command menus."""
-    member = update.chat_member
-    if member.new_chat_member.user.id != context.bot.id:
+async def on_chat_member(update: Update, context):
+    """Welcome + command-menu sync when the bot joins/is promoted, or a user becomes admin."""
+    member = update.my_chat_member or update.chat_member
+    if not member:
         return
-    if member.new_chat_member.status in ("member", "administrator"):
-        lang = db.get_chat_lang(member.chat.id)
-        msg = await member.chat.send_message(
-            welcome_text(lang), parse_mode="HTML"
-        )
-        await sync_commands_for_chat(context.bot, member.chat.id)
-        schedule_delete(context.bot, msg.chat_id, msg.message_id)
-
-
-async def on_member_status_change(update: Update, context):
-    """Re-sync command menus when a member is promoted/demoted to/from admin."""
-    member = update.chat_member
-    if not member or member.new_chat_member.user.id == context.bot.id:
+    new = member.new_chat_member
+    invalidate_admin_cache(member.chat.id)
+    if new.user.id == context.bot.id:
+        if new.status in ("member", "administrator", "creator"):
+            lang = db.get_chat_lang(member.chat.id)
+            msg = await member.chat.send_message(
+                welcome_text(lang), parse_mode="HTML"
+            )
+            await sync_commands_for_chat(context.bot, member.chat.id)
+            schedule_delete(context.bot, msg.chat_id, msg.message_id)
         return
-    old = member.old_chat_member.status if member.old_chat_member else None
-    new = member.new_chat_member.status if member.new_chat_member else None
-    old_is_admin = old in ("administrator", "creator")
-    new_is_admin = new in ("administrator", "creator")
+    old_status = member.old_chat_member.status if member.old_chat_member else None
+    old_is_admin = old_status in ("administrator", "creator")
+    new_is_admin = new.status in ("administrator", "creator")
     if old_is_admin != new_is_admin:
         await sync_commands_for_chat(context.bot, member.chat.id)
 
@@ -158,9 +161,8 @@ def main():
     )
     application.add_handler(CallbackQueryHandler(cb_delete_day, pattern="^delete_day_"))
     application.add_handler(CallbackQueryHandler(on_button, pattern="^(join|leave)$"))
-    application.add_handler(ChatMemberHandler(on_bot_added, ChatMemberHandler.ANY_CHAT_MEMBER))
     application.add_handler(
-        ChatMemberHandler(on_member_status_change, ChatMemberHandler.CHAT_MEMBER)
+        ChatMemberHandler(on_chat_member, ChatMemberHandler.ANY_CHAT_MEMBER)
     )
 
     async def post_init(app):

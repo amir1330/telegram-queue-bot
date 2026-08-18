@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 import db
-from handlers.helpers import TRIGGER_DELETE_SECONDS, cleanup_trigger, is_admin, is_group, reply_ephemeral
+from handlers.helpers import TRIGGER_DELETE_SECONDS, cleanup_trigger, is_admin, reply_ephemeral, require_group
 from i18n import tr
 
 # Keep each ping message under Telegram's limit with room for the header.
@@ -44,7 +44,7 @@ async def cmd_ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     chat = update.effective_chat
     user = update.effective_user
-    if not is_group(update) or not chat or not user:
+    if not await require_group(update, context):
         return
     lang = db.get_chat_lang(chat.id)
     if not await is_admin(update, chat.id, user.id):

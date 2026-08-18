@@ -67,8 +67,9 @@ STRINGS = {
         "setname_set": "Display name set to {name}.",
         "setname_too_long": "Name too long (max 60 characters).",
         # config commands
-        "admin_only": "Only chat admins can configure lessons.",
-        "need_admin_rights": "The bot needs admin rights with <b>Pin messages</b> and <b>Delete messages</b>.\nPromote the bot to admin in this chat, then try again.",
+        "admin_only": "Only chat admins can configure lessons.\nIf you are an admin: turn OFF Remain anonymous, or type the command in the group (not in a private chat with the bot).",
+        "need_admin_rights": "The bot is not a full admin yet.\nIn this group: Bot → Edit admin rights → enable <b>Pin messages</b> AND <b>Delete messages</b> (both must be on), then try again.",
+        "group_only": "Use this command in the group chat, not here.",
         "usage_setlesson": "Usage: /setlesson <day> <HH:MM>\nExample: /setlesson Monday 23:00",
         "prompt_setlesson": "Enter day and time (e.g. Monday 23:00), or Reply to this:",
         "prompt_setlesson_day": "Choose a day of the week:",
@@ -156,8 +157,9 @@ STRINGS = {
         "setname_set": "Имя в очереди: {name}.",
         "setname_too_long": "Слишком длинное имя (макс. 60 символов).",
         # config commands
-        "admin_only": "Только админы чата могут настраивать уроки.",
-        "need_admin_rights": "Боту нужны права админа: <b>Pin messages</b> и <b>Delete messages</b>.\nВыдай боту админку в этом чате и попробуй снова.",
+        "admin_only": "Только админы чата могут настраивать уроки.\nЕсли ты админ: выключи «Оставаться анонимным» или пиши команду в группе, не в личке с ботом.",
+        "need_admin_rights": "Бот ещё не полноценный админ.\nВ этой группе: бот → права админа → включи <b>Pin messages</b> И <b>Delete messages</b> (оба), потом попробуй снова.",
+        "group_only": "Эту команду нужно писать в группе, не здесь.",
         "usage_setlesson": "Использование: /setlesson <день> <ЧЧ:ММ>\nПример: /setlesson Понедельник 23:00",
         "prompt_setlesson": "Введите день и время (например Понедельник 23:00), или Reply:",
         "prompt_setlesson_day": "Выберите день недели:",

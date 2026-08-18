@@ -8,9 +8,9 @@ from handlers.helpers import (
     AUTO_DELETE_SECONDS,
     bot_has_pin_rights,
     is_admin,
-    is_group,
     reply_ephemeral,
     reply_keep,
+    require_group,
     schedule_delete,
 )
 from i18n import tr
@@ -28,7 +28,7 @@ def _describe(tz):
 async def cmd_tz(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
-    if not is_group(update) or not chat or not user:
+    if not await require_group(update, context):
         return
     lang = db.get_chat_lang(chat.id)
     if not await is_admin(update, chat.id, user.id):

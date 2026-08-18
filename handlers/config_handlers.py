@@ -10,9 +10,9 @@ import db
 from handlers.helpers import (
     bot_has_pin_rights,
     is_admin,
-    is_group,
     reply_ephemeral,
     reply_keep,
+    require_group,
 )
 from handlers.param_prompt import start_param_prompt
 from i18n import tr
@@ -159,7 +159,7 @@ async def cmd_setlesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
     lang = db.get_chat_lang(chat.id) if chat else "en"
-    if not is_group(update) or not chat or not user:
+    if not await require_group(update, context):
         return
     if not await is_admin(update, chat.id, user.id):
         await reply_ephemeral(update, context, tr(lang, "admin_only"))
@@ -249,7 +249,7 @@ async def apply_duration(update: Update, context: ContextTypes.DEFAULT_TYPE, arg
 async def _window_command(update: Update, context: ContextTypes.DEFAULT_TYPE, field: str):
     chat = update.effective_chat
     user = update.effective_user
-    if not is_group(update) or not chat or not user:
+    if not await require_group(update, context):
         return
     lang = db.get_chat_lang(chat.id)
     if not await is_admin(update, chat.id, user.id):
@@ -460,7 +460,7 @@ async def apply_delete(update: Update, context: ContextTypes.DEFAULT_TYPE, args)
 async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
-    if not is_group(update) or not chat or not user:
+    if not await require_group(update, context):
         return
     lang = db.get_chat_lang(chat.id)
     if not await is_admin(update, chat.id, user.id):

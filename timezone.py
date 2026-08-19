@@ -1,7 +1,7 @@
 """Per-chat timezone handling for lesson scheduling.
 
 A chat may store an IANA timezone name (e.g. "Asia/Almaty") or a fixed
-"UTC±HH(:MM)" string. If none is set, the bot uses server-local time.
+"UTC±HH(:MM)" string. If none is set, the bot defaults to Asia/Almaty.
 """
 
 import re
@@ -57,15 +57,12 @@ def resolve_tz(value):
 
 
 def chat_tz(chat_id):
-    """tzinfo for a chat, or None meaning server-local time."""
-    name = db.get_chat_timezone(chat_id)
-    if not name:
-        return None
-    return resolve_tz(name)
+    """tzinfo for a chat (Asia/Almaty when unset)."""
+    return resolve_tz(db.get_chat_timezone(chat_id))
 
 
 def chat_now(chat_id):
-    """Aware 'now' in the chat's timezone (server-local if unset)."""
+    """Aware 'now' in the chat's timezone."""
     tz = chat_tz(chat_id)
     if tz is None:
         return datetime.now().astimezone()

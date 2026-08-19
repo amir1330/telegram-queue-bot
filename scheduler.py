@@ -210,7 +210,17 @@ class QueueScheduler:
         lesson_start = datetime.combine(session_date, time(h, m), tzinfo=tz)
         return lesson_start, lesson_start + timedelta(minutes=lesson["lifetime_min"])
 
-    async def _maybe_catchup_open(self, lesson):
+    async def refresh_lesson(self, lesson):
+        """Re-register cron jobs and open the queue if we are already in the window."""
+        self.schedule_lesson(lesson)
+        await self.maybe_catchup_open(lesson)
+
+    async def catchup_chat(self, chat_id):
+        """Open any lesson windows already in progress for this chat."""
+        for lesson in db.get_lessons(chat_id):
+            await self.maybe_catchup_open(lesson)
+
+    async def maybe_catchup_open(self, lesson):
         """If we are inside an open window with no active message, open now."""
         chat_id = lesson["chat_id"]
         now = chat_now(chat_id)
@@ -255,4 +265,4 @@ class QueueScheduler:
                 )
 
         for lesson in db.get_all_lessons():
-            await self._maybe_catchup_open(lesson)
+            await self.maybe_catchup_open(lesson)

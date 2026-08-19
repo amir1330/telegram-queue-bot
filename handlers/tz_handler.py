@@ -109,4 +109,4 @@ async def _resync(context, chat_id):
     if scheduler is None:
         return
     for lesson in db.get_lessons(chat_id):
-        scheduler.schedule_lesson(lesson)
+        await scheduler.refresh_lesson(lesson)

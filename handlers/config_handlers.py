@@ -140,7 +140,7 @@ async def _save_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE, day_o
     db.set_last_lesson(chat.id, lesson["lesson_id"])
     scheduler = context.bot_data.get("scheduler")
     if scheduler:
-        scheduler.schedule_lesson(lesson)
+        await scheduler.refresh_lesson(lesson)
     await reply_ephemeral(
         update,
         context,
@@ -158,7 +158,7 @@ async def _save_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE, day_o
 async def cmd_setlesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
-    lang = db.get_chat_lang(chat.id) if chat else "en"
+    lang = db.get_chat_lang(chat.id) if chat else db.DEFAULT_LANG
     if not await require_group(update, context):
         return
     if not await is_admin(update, chat.id, user.id):
@@ -384,7 +384,7 @@ async def apply_window(
     lesson = db.update_lesson_window(lesson["lesson_id"], **{field: value})
     scheduler = context.bot_data.get("scheduler")
     if scheduler:
-        scheduler.schedule_lesson(lesson)
+        await scheduler.refresh_lesson(lesson)
     set_key = "window_set_before" if field == "open_before_min" else "window_set_duration"
     await reply_ephemeral(
         update,

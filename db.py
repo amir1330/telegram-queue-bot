@@ -12,6 +12,9 @@ from datetime import datetime, timezone
 
 _DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "queue_bot.db"))
 
+DEFAULT_LANG = "ru"
+DEFAULT_TIMEZONE = "Asia/Almaty"
+
 _CONN = None
 _LOCK = threading.RLock()
 
@@ -19,8 +22,8 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS chats (
     chat_id INTEGER PRIMARY KEY,
     title TEXT,
-    lang TEXT DEFAULT 'en',
-    timezone TEXT
+    lang TEXT DEFAULT 'ru',
+    timezone TEXT DEFAULT 'Asia/Almaty'
 );
 
 CREATE TABLE IF NOT EXISTS lessons (
@@ -149,9 +152,9 @@ def add_chat(chat_id, title=None):
     with _LOCK:
         conn = _connect()
         conn.execute(
-            "INSERT INTO chats (chat_id, title) VALUES (?, ?) "
+            "INSERT INTO chats (chat_id, title, lang, timezone) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(chat_id) DO UPDATE SET title = COALESCE(excluded.title, chats.title)",
-            (chat_id, title),
+            (chat_id, title, DEFAULT_LANG, DEFAULT_TIMEZONE),
         )
         conn.commit()
 
@@ -162,7 +165,7 @@ def get_chat_lang(chat_id):
             "SELECT lang FROM chats WHERE chat_id = ?", (chat_id,)
         ).fetchone()
     if row is None or not row["lang"]:
-        return "en"
+        return DEFAULT_LANG
     return row["lang"]
 
 
@@ -181,13 +184,13 @@ def get_all_chat_ids():
 
 
 def get_chat_timezone(chat_id):
-    """IANA timezone name for a chat, or None (use server-local time)."""
+    """IANA timezone name for a chat (defaults to Asia/Almaty)."""
     with _LOCK:
         row = _connect().execute(
             "SELECT timezone FROM chats WHERE chat_id = ?", (chat_id,)
         ).fetchone()
     if row is None or not row["timezone"]:
-        return None
+        return DEFAULT_TIMEZONE
     return row["timezone"]
 
 
@@ -413,7 +416,7 @@ def get_user_display_name(chat_id, user_id):
 
 
 def touch_known_user(chat_id, user_id, display_name=None):
-    """Remember a user we have seen in this chat (for /ping mentions)."""
+    """Remember a user we have seen in this chat (for /all mentions)."""
     with _LOCK:
         conn = _connect()
         conn.execute(

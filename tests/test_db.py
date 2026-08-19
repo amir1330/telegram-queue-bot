@@ -32,11 +32,12 @@ def main():
 
     chat_id = 12345
     db.add_chat(chat_id, "Test Group")
-    check("lang defaults to en", db.get_chat_lang(chat_id) == "en")
+    check("lang defaults to ru", db.get_chat_lang(chat_id) == "ru")
+    check("timezone defaults to Almaty", db.get_chat_timezone(chat_id) == "Asia/Almaty")
     check("get_all_chat_ids", db.get_all_chat_ids() == [chat_id])
-    db.set_chat_lang(chat_id, "ru")
-    check("lang set to ru", db.get_chat_lang(chat_id) == "ru")
-    check("lang default for unknown chat", db.get_chat_lang(999) == "en")
+    db.set_chat_lang(chat_id, "en")
+    check("lang set to en", db.get_chat_lang(chat_id) == "en")
+    check("lang default for unknown chat", db.get_chat_lang(999) == "ru")
 
     lesson = db.add_lesson(chat_id, DAY, TIME, open_before_min=30, lifetime_min=120)
     check("add_lesson returns lesson", lesson and lesson["chat_id"] == chat_id)

@@ -1,6 +1,7 @@
-"""Admin /ping — mention known users who are not in the open queue."""
+"""Admin /all — mention everyone the bot can reach in the group."""
 
 import html
+import logging
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -9,7 +10,8 @@ import db
 from handlers.helpers import TRIGGER_DELETE_SECONDS, cleanup_trigger, is_admin, reply_ephemeral, require_group
 from i18n import tr
 
-# Keep each ping message under Telegram's limit with room for the header.
+logger = logging.getLogger(__name__)
+
 _CHUNK_CHARS = 3500
 
 
@@ -19,7 +21,6 @@ def _mention(user_id: int, name: str) -> str:
 
 
 def _chunks(mentions):
-    """Split mention list into messages that fit Telegram's length limit."""
     if not mentions:
         return []
     chunks, cur = [], ""
@@ -35,13 +36,30 @@ def _chunks(mentions):
     return chunks
 
 
-async def cmd_ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mention known members who are not in today's open queue.
+async def _mention_targets(update: Update, chat_id: int, bot_id: int) -> list[dict]:
+    """Admins from Telegram + everyone the bot has seen in this chat."""
+    users: dict[int, str] = {}
+    try:
+        admins = await update.get_bot().get_chat_administrators(chat_id)
+        for member in admins:
+            user = member.user
+            if not user or user.is_bot or user.id == bot_id:
+                continue
+            users[user.id] = user.first_name or user.username or str(user.id)
+    except Exception as exc:
+        logger.warning("all: get_chat_administrators failed chat=%s: %s", chat_id, exc)
 
-    Ping messages are kept (so people see the tags); only the /ping command
-    itself is removed. Telegram bots can only tag users they have already seen
-    (joined queue, /setname, etc.) — not the full group roster.
-    """
+    for row in db.get_known_users(chat_id):
+        uid = row["user_id"]
+        if uid == bot_id or uid in users:
+            continue
+        users[uid] = row["display_name"] or str(uid)
+
+    return [{"user_id": uid, "display_name": name} for uid, name in sorted(users.items())]
+
+
+async def cmd_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mention all group members the bot can tag."""
     chat = update.effective_chat
     user = update.effective_user
     if not await require_group(update, context):
@@ -55,25 +73,16 @@ async def cmd_ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     sessions = db.get_active_messages(chat_id=chat.id, status="open")
     if not sessions:
-        await reply_ephemeral(update, context, tr(lang, "ping_no_open"))
+        await reply_ephemeral(update, context, tr(lang, "all_no_open"))
         return
 
-    session = sessions[0]
-    in_queue = {
-        e["user_id"]
-        for e in db.get_queue(chat.id, session["lesson_id"], session["session_date"])
-    }
-    missing = [
-        u
-        for u in db.get_known_users(chat.id)
-        if u["user_id"] not in in_queue and u["user_id"] != context.bot.id
-    ]
-    if not missing:
-        await reply_ephemeral(update, context, tr(lang, "ping_everyone_in"))
+    targets = await _mention_targets(update, chat.id, context.bot.id)
+    if not targets:
+        await reply_ephemeral(update, context, tr(lang, "all_nobody"))
         return
 
-    mentions = [_mention(u["user_id"], u["display_name"]) for u in missing]
-    header = tr(lang, "ping_header", n=len(mentions))
+    mentions = [_mention(u["user_id"], u["display_name"]) for u in targets]
+    header = tr(lang, "all_header", n=len(mentions))
     parts = _chunks(mentions)
 
     await cleanup_trigger(update, context, seconds=TRIGGER_DELETE_SECONDS)

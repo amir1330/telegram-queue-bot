@@ -134,7 +134,7 @@ def admin_commands(lang="en"):
             "/duration &lt;min&gt; - " + tr(lang, "admin_duration"),
             "/delete &lt;Day&gt; - " + tr(lang, "admin_delete"),
             "/tz - " + tr(lang, "admin_tz"),
-            "/ping - " + tr(lang, "admin_ping"),
+            "/all - " + tr(lang, "admin_all"),
         ]
     )
 

@@ -202,7 +202,7 @@ async def require_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> b
     if is_group(update) and update.effective_chat and update.effective_user:
         return True
     chat = update.effective_chat
-    lang = db.get_chat_lang(chat.id) if chat else "en"
+    lang = db.get_chat_lang(chat.id) if chat else db.DEFAULT_LANG
     await reply_ephemeral(update, context, tr(lang, "group_only"))
     return False
 

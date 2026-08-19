@@ -1,4 +1,4 @@
-"""Minimal i18n for the queue bot (per-chat language, en default)."""
+"""Minimal i18n for the queue bot (per-chat language, ru default)."""
 
 LANGUAGES = ("en", "ru")
 
@@ -9,9 +9,9 @@ LANGS = {
 
 
 def tr(lang, key, **kwargs):
-    """Translate key to lang, falling back to English."""
-    table = STRINGS.get(lang) or STRINGS["en"]
-    tpl = table.get(key) or STRINGS["en"].get(key, key)
+    """Translate key to lang, falling back to Russian."""
+    table = STRINGS.get(lang) or STRINGS["ru"]
+    tpl = table.get(key) or STRINGS["ru"].get(key, key)
     if kwargs:
         return tpl.format(**kwargs)
     return tpl
@@ -50,7 +50,7 @@ STRINGS = {
         "admin_duration": "minutes until the queue closes after the lesson starts",
         "admin_delete": "remove a lesson for a day",
         "admin_tz": "set the chat's timezone",
-        "admin_ping": "mention known members not in the open queue",
+        "admin_all": "mention everyone in the group",
         "lesson_desc": "opens {ob} min before, closes {lt} min after start",
         "label_before": "Open-before",
         "label_duration": "Queue closes after",
@@ -95,9 +95,9 @@ STRINGS = {
         "usage_delete": "Usage: /delete <day>\nExample: /delete Monday",
         "prompt_delete_day": "Choose a lesson to remove:",
         "prompt_delete": "Enter the day (just type e.g. Monday, or Reply to this):",
-        "ping_no_open": "No queue is open right now — nothing to ping for.",
-        "ping_everyone_in": "Everyone the bot knows is already in the queue.",
-        "ping_header": "Not in the queue yet ({n}):",
+        "all_no_open": "No queue is open right now.",
+        "all_nobody": "No members to mention yet.",
+        "all_header": "Everyone ({n}):",
         # /lang
         "lang_prompt": "<b>Language / Язык</b>\n\nSelect the chat's language:",
         "lang_set": "Language set to {lang}.",
@@ -140,7 +140,7 @@ STRINGS = {
         "admin_duration": "через сколько минут после начала очередь закроется",
         "admin_delete": "удалить урок для дня",
         "admin_tz": "часовой пояс чата",
-        "admin_ping": "тегнуть тех, кого бот знает и кто ещё не в очереди",
+        "admin_all": "тегнуть всех в группе",
         "lesson_desc": "открытие за {ob} мин, очередь закроется спустя {lt} мин",
         "label_before": "Открытие очереди",
         "label_duration": "Очередь закроется спустя",
@@ -185,9 +185,9 @@ STRINGS = {
         "usage_delete": "Использование: /delete <день>\nПример: /delete Понедельник",
         "prompt_delete_day": "Выберите урок для удаления:",
         "prompt_delete": "Введите день (просто напишите, например Понедельник, или Reply):",
-        "ping_no_open": "Сейчас очередь не открыта — некого пинговать.",
-        "ping_everyone_in": "Все, кого бот знает, уже в очереди.",
-        "ping_header": "Ещё не в очереди ({n}):",
+        "all_no_open": "Сейчас очередь не открыта.",
+        "all_nobody": "Пока некого тегнуть.",
+        "all_header": "Все ({n}):",
         # /lang
         "lang_prompt": "<b>Язык / Language</b>\n\nВыбери язык чата:",
         "lang_set": "Язык установлен: {lang}.",

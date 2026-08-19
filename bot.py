@@ -37,7 +37,7 @@ from handlers.helpers import (
 )
 from handlers.info_handler import cmd_info
 from handlers.param_reply import on_param_reply
-from handlers.ping_handler import cmd_ping
+from handlers.all_handler import cmd_all
 from handlers.queue_handlers import cmd_leave, cmd_queue, cmd_setname
 from handlers.tz_handler import cb_tz, cmd_tz
 from i18n import LANGS, tr
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 async def cmd_start(update: Update, context):
     chat = update.effective_chat
-    lang = db.get_chat_lang(chat.id) if chat else "en"
+    lang = db.get_chat_lang(chat.id) if chat else db.DEFAULT_LANG
     await cleanup_trigger(update, context, seconds=TRIGGER_DELETE_SECONDS)
     msg = await update.effective_message.reply_text(
         welcome_text(lang), parse_mode="HTML"
@@ -118,6 +118,9 @@ async def on_chat_member(update: Update, context):
             )
             await sync_commands_for_chat(context.bot, member.chat.id)
             schedule_delete(context.bot, msg.chat_id, msg.message_id)
+            scheduler = context.bot_data.get("scheduler")
+            if scheduler:
+                await scheduler.catchup_chat(member.chat.id)
         return
     old_status = member.old_chat_member.status if member.old_chat_member else None
     old_is_admin = old_status in ("administrator", "creator")
@@ -149,7 +152,7 @@ def main():
     application.add_handler(CommandHandler("duration", cmd_duration))
     application.add_handler(CommandHandler("delete", cmd_delete))
     application.add_handler(CommandHandler("tz", cmd_tz))
-    application.add_handler(CommandHandler("ping", cmd_ping))
+    application.add_handler(CommandHandler("all", cmd_all))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, on_param_reply)
     )

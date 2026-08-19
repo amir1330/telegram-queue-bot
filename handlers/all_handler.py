@@ -71,11 +71,6 @@ async def cmd_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     db.touch_known_user(chat.id, user.id, user.first_name)
 
-    sessions = db.get_active_messages(chat_id=chat.id, status="open")
-    if not sessions:
-        await reply_ephemeral(update, context, tr(lang, "all_no_open"))
-        return
-
     targets = await _mention_targets(update, chat.id, context.bot.id)
     if not targets:
         await reply_ephemeral(update, context, tr(lang, "all_nobody"))

@@ -76,41 +76,39 @@ One-shot `/setname <name>` still applies immediately.
 
 ## Deployment (Docker + CI/CD)
 
-The repo ships a `Dockerfile`, a production `docker-compose.prod.yml`, and a
-GitHub Actions workflow (`.github/workflows/deploy.yml`) that:
+Same pattern as **sanaq**: GitHub Actions builds the image, pushes to GHCR,
+then SSHs into the VPS and recreates the container. **No webhook.**
 
-1. builds the image and pushes it to GHCR (`ghcr.io/amir1330/queue-bot`),
-2. POSTs to the deploy webhook on the VPS (port `9001`) with a deploy token.
+Workflow: `.github/workflows/ci.yml`
+
+1. build + push `ghcr.io/amir1330/queue-bot:latest` (and `:sha`)
+2. SCP `docker-compose.prod.yml` + `deploy/remote.sh` to `/root/telegram-queue-bot`
+3. SSH-run `deploy/remote.sh` → `docker login` → `compose pull` → recreate
 
 ### Server setup
 
-1. Clone/place the repo on the server (e.g. `/root/telegram-queue-bot`) with
-   `docker-compose.prod.yml` and `deploy.sh`.
-2. Create a `.env` next to it:
+1. Directory on the VPS: `/root/telegram-queue-bot`
+2. `.env` next to compose (only runtime secrets):
 
    ```env
    BOT_TOKEN=your_bot_token
-   DEPLOY_TOKEN=some_random_token
-   PORT=9001
-   DEPLOY_SCRIPT=/root/telegram-queue-bot/deploy.sh
    ```
 
-3. Run the webhook listener (port `9001`) under systemd so CI can trigger
-   redeploys. `deploy.sh` pulls the latest image, recreates the container and
-   keeps the SQLite data in the `queue_bot_data` volume.
+3. SQLite lives in the Docker volume `queue_bot_data` — survives recreates.
 
 ### GitHub secrets
 
-Required for the CI/CD workflow (repo → Settings → Secrets → Actions):
+Repo → Settings → Secrets → Actions (same names as sanaq):
 
 | Secret | Value |
 |---|---|
-| `VPS_HOST` | server IP or hostname |
-| `DEPLOY_TOKEN` | same value as `DEPLOY_TOKEN` in the server `.env` |
-| `BOT_TOKEN` | the bot token (also used at runtime via the server `.env`) |
+| `HOST` | VPS IP / hostname |
+| `USERNAME` | SSH user (e.g. `root`) |
+| `SSH_KEY` | private key for that user |
 
-**Never commit the token.** It is stored in GitHub secrets and in the server's
-`.env` only; both are excluded from git.
+`GITHUB_TOKEN` is provided by Actions for GHCR push/pull — no deploy token needed.
+
+**Never commit the bot token.** It stays in the server `.env` only.
 
 ## Notes / design decisions
 

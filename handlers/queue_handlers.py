@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 import db
+from handlers.all_handler import remember_user
 from handlers.helpers import display_name, reply_ephemeral
 from handlers.param_prompt import start_param_prompt
 from i18n import tr
@@ -31,7 +32,7 @@ async def cmd_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lesson = db.get_lesson_by_id(open_session["lesson_id"])
     name = display_name(user, chat.id)
     sdate = open_session["session_date"]
-    db.touch_known_user(chat.id, user.id, name)
+    remember_user(chat.id, user)
     entry = db.add_queue_entry(chat.id, open_session["lesson_id"], user.id, name, sdate)
     if entry is None:
         await reply_ephemeral(update, context, tr(lang, "q_already_in"))
@@ -80,7 +81,7 @@ async def apply_setname(update: Update, context: ContextTypes.DEFAULT_TYPE, args
         await reply_ephemeral(update, context, tr(lang, "setname_too_long"))
         return False
     db.set_user_display_name(chat.id, user.id, name)
-    db.touch_known_user(chat.id, user.id, name)
+    db.touch_known_user(chat.id, user.id, name, username=user.username)
     for session in _open_sessions(chat.id):
         await refresh_queue_message(
             context.bot, chat.id, session["lesson_id"], session["session_date"], lang=lang

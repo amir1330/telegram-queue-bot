@@ -95,7 +95,7 @@ STRINGS = {
         "usage_delete": "Usage: /delete <day>\nExample: /delete Monday",
         "prompt_delete_day": "Choose a lesson to remove:",
         "prompt_delete": "Enter the day (just type e.g. Monday, or Reply to this):",
-        "all_nobody": "No members to mention yet.",
+        "all_nobody": "No members to mention yet. People appear here after they write in the group (or join).",
         "all_header": "Everyone ({n}):",
         # /lang
         "lang_prompt": "<b>Language / Язык</b>\n\nSelect the chat's language:",
@@ -184,7 +184,7 @@ STRINGS = {
         "usage_delete": "Использование: /delete <день>\nПример: /delete Понедельник",
         "prompt_delete_day": "Выберите урок для удаления:",
         "prompt_delete": "Введите день (просто напишите, например Понедельник, или Reply):",
-        "all_nobody": "Пока некого тегнуть.",
+        "all_nobody": "Пока некого тегнуть. Люди появятся после того, как напишут в группе (или зайдут).",
         "all_header": "Все ({n}):",
         # /lang
         "lang_prompt": "<b>Язык / Language</b>\n\nВыбери язык чата:",

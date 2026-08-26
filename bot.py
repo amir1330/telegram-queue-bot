@@ -37,7 +37,7 @@ from handlers.helpers import (
 )
 from handlers.info_handler import cmd_info
 from handlers.param_reply import on_param_reply
-from handlers.all_handler import cmd_all
+from handlers.all_handler import cmd_all, learn_group_user, remember_user
 from handlers.queue_handlers import cmd_leave, cmd_queue, cmd_setname
 from handlers.tz_handler import cb_tz, cmd_tz
 from i18n import LANGS, tr
@@ -123,8 +123,12 @@ async def on_chat_member(update: Update, context):
                 await scheduler.catchup_chat(member.chat.id)
         return
     old_status = member.old_chat_member.status if member.old_chat_member else None
+    new_status = new.status
+    # Remember everyone who joins / stays in the group for /all @mentions.
+    if new_status in ("member", "administrator", "creator", "restricted"):
+        remember_user(member.chat.id, new.user)
     old_is_admin = old_status in ("administrator", "creator")
-    new_is_admin = new.status in ("administrator", "creator")
+    new_is_admin = new_status in ("administrator", "creator")
     if old_is_admin != new_is_admin:
         await sync_commands_for_chat(context.bot, member.chat.id)
 
@@ -155,6 +159,11 @@ def main():
     application.add_handler(CommandHandler("all", cmd_all))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, on_param_reply)
+    )
+    # Learn every group speaker for /all (separate group so other handlers still run).
+    application.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & ~filters.StatusUpdate.ALL, learn_group_user),
+        group=1,
     )
     application.add_handler(CallbackQueryHandler(cb_lang, pattern="^lang_"))
     application.add_handler(CallbackQueryHandler(cb_tz, pattern="^tz_"))

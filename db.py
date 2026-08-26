@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS known_users (
     chat_id INTEGER,
     user_id INTEGER,
     display_name TEXT,
+    username TEXT,
     last_seen TEXT,
     PRIMARY KEY (chat_id, user_id)
 );
@@ -116,6 +117,12 @@ def _migrate(conn):
     }
     if pending_cols and "payload" not in pending_cols:
         conn.execute("ALTER TABLE param_pending ADD COLUMN payload TEXT")
+        conn.commit()
+    known_cols = {
+        r["name"] for r in conn.execute("PRAGMA table_info(known_users)").fetchall()
+    }
+    if known_cols and "username" not in known_cols:
+        conn.execute("ALTER TABLE known_users ADD COLUMN username TEXT")
         conn.commit()
     conn.execute(
         "DELETE FROM queue_entries WHERE entry_id NOT IN "
@@ -415,17 +422,21 @@ def get_user_display_name(chat_id, user_id):
         return row["display_name"] if row else None
 
 
-def touch_known_user(chat_id, user_id, display_name=None):
+def touch_known_user(chat_id, user_id, display_name=None, username=None):
     """Remember a user we have seen in this chat (for /all mentions)."""
+    if user_id is None:
+        return
+    username = (username or "").lstrip("@") or None
     with _LOCK:
         conn = _connect()
         conn.execute(
-            "INSERT INTO known_users (chat_id, user_id, display_name, last_seen) "
-            "VALUES (?, ?, ?, ?) "
+            "INSERT INTO known_users (chat_id, user_id, display_name, username, last_seen) "
+            "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(chat_id, user_id) DO UPDATE SET "
             "display_name = COALESCE(excluded.display_name, known_users.display_name), "
+            "username = COALESCE(excluded.username, known_users.username), "
             "last_seen = excluded.last_seen",
-            (chat_id, user_id, display_name, _now()),
+            (chat_id, user_id, display_name, username, _now()),
         )
         conn.commit()
 
@@ -435,12 +446,15 @@ def get_known_users(chat_id):
     with _LOCK:
         conn = _connect()
         rows = conn.execute(
-            "SELECT user_id, MAX(display_name) AS display_name FROM ("
-            "  SELECT user_id, display_name FROM known_users WHERE chat_id = ? "
+            "SELECT user_id, "
+            "MAX(display_name) AS display_name, "
+            "MAX(username) AS username "
+            "FROM ("
+            "  SELECT user_id, display_name, username FROM known_users WHERE chat_id = ? "
             "  UNION ALL "
-            "  SELECT user_id, display_name FROM user_names WHERE chat_id = ? "
+            "  SELECT user_id, display_name, NULL AS username FROM user_names WHERE chat_id = ? "
             "  UNION ALL "
-            "  SELECT user_id, display_name FROM queue_entries WHERE chat_id = ?"
+            "  SELECT user_id, display_name, NULL AS username FROM queue_entries WHERE chat_id = ?"
             ") GROUP BY user_id ORDER BY user_id",
             (chat_id, chat_id, chat_id),
         ).fetchall()
@@ -451,6 +465,10 @@ def get_known_users(chat_id):
                 "SELECT display_name FROM user_names WHERE chat_id = ? AND user_id = ?",
                 (chat_id, uid),
             ).fetchone()
+            known = conn.execute(
+                "SELECT username FROM known_users WHERE chat_id = ? AND user_id = ?",
+                (chat_id, uid),
+            ).fetchone()
             out.append(
                 {
                     "user_id": uid,
@@ -458,6 +476,9 @@ def get_known_users(chat_id):
                         custom["display_name"] if custom else r["display_name"]
                     )
                     or str(uid),
+                    "username": (known["username"] if known else None)
+                    or r["username"]
+                    or None,
                 }
             )
         return out

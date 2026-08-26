@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 import db
+from handlers.all_handler import remember_user
 from handlers.helpers import display_name
 from i18n import tr
 from queue_message import refresh_queue_message
@@ -50,7 +51,7 @@ async def _do_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lesson_id = session["lesson_id"]
     sdate = session["session_date"]
     name = display_name(user, chat.id)
-    db.touch_known_user(chat.id, user.id, name)
+    remember_user(chat.id, user)
     entry = db.add_queue_entry(chat.id, lesson_id, user.id, name, sdate)
     pos = db.position_of(chat.id, lesson_id, sdate, user.id)
     if entry is None:

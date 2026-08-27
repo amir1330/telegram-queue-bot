@@ -19,6 +19,7 @@ from handlers.config_handlers import (
     apply_before,
     apply_delete,
     apply_duration,
+    apply_header,
     apply_setlesson,
     apply_setlesson_time,
     parse_setlesson_payload,
@@ -34,7 +35,9 @@ from i18n import tr
 
 logger = logging.getLogger(__name__)
 
-_ADMIN_COMMANDS = frozenset({"setlesson", "setlesson_time", "before", "duration", "delete"})
+_ADMIN_COMMANDS = frozenset(
+    {"setlesson", "setlesson_time", "before", "duration", "delete", "header"}
+)
 
 _APPLY = {
     "setname": apply_setname,
@@ -50,7 +53,11 @@ _TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
 def _looks_like_answer(command: str, text: str) -> bool:
     """True if text is short/shaped like a param answer, not free chat."""
     text = (text or "").strip()
-    if not text or "\n" in text:
+    if not text:
+        return False
+    if command == "header":
+        return len(text) <= 500
+    if "\n" in text:
         return False
     if command == "setlesson_time":
         return bool(_TIME_RE.match(text))
@@ -128,6 +135,12 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
             clear_pending(chat.id, user.id)
             return
         ok = await apply_setlesson_time(update, context, args, day)
+    elif command == "header":
+        day, ui_message_id = parse_setlesson_payload(pending.get("payload"))
+        if not day:
+            clear_pending(chat.id, user.id)
+            return
+        ok = await apply_header(update, context, day, text)
     elif command in ("before", "duration") and pending.get("payload"):
         day, ui_message_id = parse_setlesson_payload(pending.get("payload"))
         if day and len(args) == 1:

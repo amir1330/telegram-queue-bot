@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS lessons (
     lesson_time TEXT,
     open_before_min INTEGER DEFAULT 30,
     lifetime_min INTEGER DEFAULT 120,
+    header_text TEXT,
     UNIQUE (chat_id, day_of_week),
     FOREIGN KEY (chat_id) REFERENCES chats (chat_id)
 );
@@ -123,6 +124,12 @@ def _migrate(conn):
     }
     if known_cols and "username" not in known_cols:
         conn.execute("ALTER TABLE known_users ADD COLUMN username TEXT")
+        conn.commit()
+    lesson_cols = {
+        r["name"] for r in conn.execute("PRAGMA table_info(lessons)").fetchall()
+    }
+    if lesson_cols and "header_text" not in lesson_cols:
+        conn.execute("ALTER TABLE lessons ADD COLUMN header_text TEXT")
         conn.commit()
     conn.execute(
         "DELETE FROM queue_entries WHERE entry_id NOT IN "
@@ -294,6 +301,22 @@ def update_lesson_window(lesson_id, open_before_min=None, lifetime_min=None):
     with _LOCK:
         conn = _connect()
         conn.execute(f"UPDATE lessons SET {', '.join(sets)} WHERE lesson_id = ?", params)
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM lessons WHERE lesson_id = ?", (lesson_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def update_lesson_header(lesson_id, header_text):
+    """Set or clear the custom text under the lesson line on the queue message."""
+    value = (header_text or "").strip() or None
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "UPDATE lessons SET header_text = ? WHERE lesson_id = ?",
+            (value, lesson_id),
+        )
         conn.commit()
         row = conn.execute(
             "SELECT * FROM lessons WHERE lesson_id = ?", (lesson_id,)

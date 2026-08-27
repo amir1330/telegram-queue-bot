@@ -187,18 +187,16 @@ def format_lesson_line(lesson, lang="en"):
 
 
 def build_queue_text(lesson, session_date, entries, lang="en", closed=False):
-    """HTML body for the pinned queue message: title, time, optional note, list."""
+    """HTML body: optional header note, then title/time, then the joined list."""
     title = tr(lang, "queue_title_closed" if closed else "queue_title")
     when = tr(lang, "queue_when", day=day_long(lang, lesson["day_of_week"]), time=lesson["lesson_time"])
 
-    lines = [
-        title,
-        when,
-    ]
+    lines = []
     header = (lesson.get("header_text") or "").strip()
     if header:
-        lines.append("")
         lines.append(format_header_html(header))
+        lines.append("")
+    lines.extend([title, when])
     if entries:
         lines.append("")
         lines.append(

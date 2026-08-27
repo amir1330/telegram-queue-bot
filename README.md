@@ -76,37 +76,43 @@ One-shot `/setname <name>` still applies immediately.
 
 ## Deployment (Docker + CI/CD)
 
-Same pattern as **sanaq**: GitHub Actions builds the image, pushes to GHCR,
-then SSHs into the VPS and recreates the container. **No webhook.**
+Same idea as **sanaq**, hardened:
 
-Workflow: `.github/workflows/ci.yml`
+1. GitHub Actions builds/pushes `ghcr.io/amir1330/queue-bot`
+2. CI SSHs as non-root user **`queuebot`** with a **forced-command** key
+3. Remote `deploy/ci-entry.sh` only accepts `sync-deploy` / `deploy`
+4. Host key is pinned in `.github/known_hosts`
 
-1. build + push `ghcr.io/amir1330/queue-bot:latest` (and `:sha`)
-2. SCP `docker-compose.prod.yml` + `deploy/remote.sh` to `/root/telegram-queue-bot`
-3. SSH-run `deploy/remote.sh` → `docker login` → `compose pull` → recreate
+No webhook. No root SSH from CI.
 
-### Server setup
+### One-time VPS + secrets setup
 
-1. Directory on the VPS: `/root/telegram-queue-bot`
-2. `.env` next to compose (only runtime secrets):
+From your laptop (needs `gh` auth + SSH as root once):
 
-   ```env
-   BOT_TOKEN=your_bot_token
-   ```
+```bash
+chmod +x deploy/provision-ci-key.sh
+./deploy/provision-ci-key.sh
+```
 
-3. SQLite lives in the Docker volume `queue_bot_data` — survives recreates.
+This creates `queuebot` (in `docker` group), installs the restricted key, and sets
+repo secrets `HOST`, `USERNAME`, `SSH_KEY`.
+
+### Server layout
+
+| Path | Purpose |
+|---|---|
+| `/home/queuebot/telegram-queue-bot/` | compose + `.env` (`BOT_TOKEN=...`) |
+| `/home/queuebot/bin/ci-entry.sh` | forced-command entrypoint |
+
+SQLite stays in Docker volume `queue_bot_data`.
 
 ### GitHub secrets
 
-Repo → Settings → Secrets → Actions (same names as sanaq):
-
 | Secret | Value |
 |---|---|
-| `HOST` | VPS IP / hostname |
-| `USERNAME` | SSH user (e.g. `root`) |
-| `SSH_KEY` | private key for that user |
-
-`GITHUB_TOKEN` is provided by Actions for GHCR push/pull — no deploy token needed.
+| `HOST` | VPS IP |
+| `USERNAME` | `queuebot` |
+| `SSH_KEY` | private key (forced-command) |
 
 **Never commit the bot token.** It stays in the server `.env` only.
 

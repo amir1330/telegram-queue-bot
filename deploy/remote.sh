@@ -1,9 +1,18 @@
 #!/bin/sh
 set -eu
-cd /root/telegram-queue-bot
+APP_DIR="${QUEUEBOT_APP:-/home/queuebot/telegram-queue-bot}"
+cd "$APP_DIR"
+
+# Prefer env from CI (sync-deploy); else optional GHCR_TOKEN in .env for manual runs.
+if [ -z "${GHCR_TOKEN:-}" ] && [ -f .env ]; then
+  # shellcheck disable=SC1091
+  GHCR_TOKEN=$(grep -E '^GHCR_TOKEN=' .env | tail -n1 | cut -d= -f2- || true)
+  GHCR_USER=$(grep -E '^GHCR_USER=' .env | tail -n1 | cut -d= -f2- || true)
+  export GHCR_TOKEN GHCR_USER
+fi
 
 if [ -z "${GHCR_TOKEN:-}" ]; then
-  echo "GHCR_TOKEN is missing" >&2
+  echo "GHCR_TOKEN is missing (pass via CI or set in .env)" >&2
   exit 1
 fi
 
@@ -21,7 +30,6 @@ $DC $FILE pull telegram-queue-bot
 docker logout ghcr.io >/dev/null 2>&1 || true
 
 echo "Recreating telegram-queue-bot..."
-# Force recreate even when only the :latest digest changed.
 docker stop telegram-queue-bot 2>/dev/null || true
 docker rm telegram-queue-bot 2>/dev/null || true
 $DC $FILE up -d --no-build --force-recreate telegram-queue-bot

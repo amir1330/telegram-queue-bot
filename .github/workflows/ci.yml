@@ -52,26 +52,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync compose to VPS
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          source: "docker-compose.prod.yml,deploy/remote.sh"
-          target: /root/telegram-queue-bot
-          strip_components: 0
-
-      - name: Pull images and recreate bot
-        uses: appleboy/ssh-action@v1.2.2
+      # Hardened path: non-root user + forced-command key.
+      # stdin protocol: GHCR_USER\nGHCR_TOKEN\n + tar(cz) of compose/scripts
+      # remote forced command: sync-deploy → ci-entry.sh
+      - name: Sync and recreate over restricted SSH
         env:
+          HOST: ${{ secrets.HOST }}
+          USERNAME: ${{ secrets.USERNAME }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          envs: GHCR_TOKEN,GHCR_USER
-          script: |
-            chmod +x /root/telegram-queue-bot/deploy/remote.sh
-            /root/telegram-queue-bot/deploy/remote.sh
+        run: |
+          set -euo pipefail
+          install -m 600 /dev/null "${RUNNER_TEMP}/deploy_key"
+          printf '%s\n' "$SSH_KEY" > "${RUNNER_TEMP}/deploy_key"
+          {
+            printf '%s\n' "$GHCR_USER"
+            printf '%s\n' "$GHCR_TOKEN"
+            tar czf - docker-compose.prod.yml deploy/remote.sh deploy/ci-entry.sh
+          } | ssh -i "${RUNNER_TEMP}/deploy_key" \
+            -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile=.github/known_hosts \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            "${USERNAME}@${HOST}" sync-deploy

@@ -1,12 +1,46 @@
 """HTML message builders and inline keyboards for the queue bot."""
 
 import html
+import re
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from i18n import tr
 from queue_view import DAY_INDEX, DAYS_EN, DAYS_RU
 from timezone import CURATED_ZONES, offset_label, resolve_tz
+
+# Markdown-style mentions copied from Telegram clients, e.g.
+# [Name](tg://user?id=123) or [Name](tg://resolve?domain=user)
+_HEADER_MD_LINK = re.compile(
+    r"\[([^\]]+)\]\("
+    r"(?:"
+    r"tg://user\?id=(\d+)"
+    r"|tg://resolve\?domain=([A-Za-z0-9_]{4,32})"
+    r"|https?://t\.me/([A-Za-z0-9_]{4,32})"
+    r")"
+    r"\)"
+)
+
+
+def format_header_html(text: str) -> str:
+    """Escape header text but keep Telegram mention links clickable/pinging."""
+    if not text:
+        return ""
+    parts = []
+    last = 0
+    for match in _HEADER_MD_LINK.finditer(text):
+        parts.append(html.escape(text[last : match.start()]))
+        label = html.escape(match.group(1))
+        user_id, domain, tme = match.group(2), match.group(3), match.group(4)
+        if user_id:
+            parts.append(f'<a href="tg://user?id={user_id}">{label}</a>')
+        else:
+            username = domain or tme
+            # https://t.me/... is a URL, not a mention. @username notifies.
+            parts.append(f"@{username}")
+        last = match.end()
+    parts.append(html.escape(text[last:]))
+    return "".join(parts)
 
 
 def day_long(lang, key):
@@ -106,7 +140,7 @@ def build_queue_text(lesson, session_date, entries, lang="en", closed=False):
     header = (lesson.get("header_text") or "").strip()
     if header:
         lines.append("")
-        lines.append(html.escape(header))
+        lines.append(format_header_html(header))
     if entries:
         lines.append("")
         lines.append(

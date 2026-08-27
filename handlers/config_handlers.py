@@ -22,7 +22,7 @@ from queue_view import DAYS_EN, DAYS_RU
 
 logger = logging.getLogger(__name__)
 
-HEADER_MAX_LEN = 500
+HEADER_MAX_LEN = 2000
 
 _DAY_ALIASES = {
     name.lower()[:3]: key

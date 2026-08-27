@@ -56,7 +56,8 @@ def _looks_like_answer(command: str, text: str) -> bool:
     if not text:
         return False
     if command == "header":
-        return len(text) <= 500
+        # Mentions / code fences / multi-line notes while pending.
+        return len(text) <= 2000
     if "\n" in text:
         return False
     if command == "setlesson_time":
@@ -140,7 +141,10 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not day:
             clear_pending(chat.id, user.id)
             return
-        ok = await apply_header(update, context, day, text)
+        from message_builder import serialize_header_from_message
+
+        header_text = serialize_header_from_message(message)
+        ok = await apply_header(update, context, day, header_text)
     elif command in ("before", "duration") and pending.get("payload"):
         day, ui_message_id = parse_setlesson_payload(pending.get("payload"))
         if day and len(args) == 1:

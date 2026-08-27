@@ -20,6 +20,64 @@ _HEADER_MD_LINK = re.compile(
     r")"
     r"\)"
 )
+_FENCE_RE = re.compile(r"^```(?:\w+\r?\n)?([\s\S]*?)```$", re.MULTILINE)
+
+
+def _utf16_slice(text: str, offset: int, length: int) -> str:
+    raw = text.encode("utf-16-le")
+    return raw[offset * 2 : (offset + length) * 2].decode("utf-16-le")
+
+
+def serialize_header_from_message(message) -> str:
+    """Rebuild header text so mentions survive Telegram's client rewriting.
+
+    Clients often turn [Name](tg://user?id=…) into plain text + entities.
+    We turn entities back into markdown links. Code/pre blocks keep literal text
+    (useful if the user wraps the markdown in ``` … ```).
+    """
+    text = message.text or message.caption or ""
+    entities = list(message.entities or message.caption_entities or [])
+
+    # Whole message is a code/pre block → keep raw markdown inside.
+    if len(entities) == 1 and entities[0].type in ("pre", "code"):
+        try:
+            return message.parse_entity(entities[0]).strip()
+        except Exception:
+            pass
+
+    fenced = _FENCE_RE.match(text.strip())
+    if fenced:
+        return fenced.group(1).strip()
+
+    mention_ents = [
+        e
+        for e in entities
+        if e.type in ("text_mention", "text_link", "mention", "url")
+    ]
+    if not mention_ents:
+        return text.strip()
+
+    mention_ents.sort(key=lambda e: e.offset)
+    parts = []
+    cursor = 0
+    utf16_len = len(text.encode("utf-16-le")) // 2
+    for ent in mention_ents:
+        if ent.offset > cursor:
+            parts.append(_utf16_slice(text, cursor, ent.offset - cursor))
+        try:
+            span = message.parse_entity(ent)
+        except Exception:
+            span = _utf16_slice(text, ent.offset, ent.length)
+        if ent.type == "text_mention" and getattr(ent, "user", None):
+            parts.append(f"[{span}](tg://user?id={ent.user.id})")
+        elif ent.type == "text_link" and ent.url:
+            parts.append(f"[{span}]({ent.url})")
+        else:
+            parts.append(span)
+        cursor = ent.offset + ent.length
+    if cursor < utf16_len:
+        parts.append(_utf16_slice(text, cursor, utf16_len - cursor))
+    return "".join(parts).strip()
 
 
 def format_header_html(text: str) -> str:

@@ -1,9 +1,11 @@
 """Shared live-edit of the pinned queue message (design D4)."""
 
+import asyncio
 import logging
+import time
 
 from telegram import Bot
-from telegram.error import BadRequest, Forbidden, NetworkError, TimedOut
+from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
 
 import db
 from message_builder import build_queue_text, queue_markup
@@ -34,6 +36,24 @@ def _should_delete_on_bad_request(exc: BadRequest) -> bool:
     return any(marker in msg for marker in _DELETE_MARKERS)
 
 
+_EDIT_LOCKS: dict[int, asyncio.Lock] = {}
+_LAST_EDIT: dict[int, float] = {}
+
+
+async def _throttle(chat_id: int):
+    lock = _EDIT_LOCKS.get(chat_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _EDIT_LOCKS[chat_id] = lock
+    async with lock:
+        now = time.monotonic()
+        last = _LAST_EDIT.get(chat_id, 0)
+        wait = 0.4 - (now - last)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _LAST_EDIT[chat_id] = time.monotonic()
+
+
 async def refresh_queue_message(bot: Bot, chat_id, lesson_id, session_date, lang="en"):
     """Re-read the queue and edit the stored pinned message in place.
 
@@ -59,6 +79,7 @@ async def refresh_queue_message(bot: Bot, chat_id, lesson_id, session_date, lang
     )
     markup = None if closed else queue_markup(lang)
 
+    await _throttle(chat_id)
     try:
         await bot.edit_message_text(
             chat_id=chat_id,
@@ -82,6 +103,11 @@ async def refresh_queue_message(bot: Bot, chat_id, lesson_id, session_date, lang
                 "refresh_queue_message: keeping active row chat=%s lesson=%s session=%s (BadRequest not delete-marker: %s)",
                 chat_id, lesson_id, session_date, exc,
             )
+    except RetryAfter as exc:
+        logger.warning(
+            "refresh_queue_message: Flood RetryAfter %ss chat=%s lesson=%s session=%s — keeping open",
+            getattr(exc, "retry_after", "?"), chat_id, lesson_id, session_date,
+        )
     except Forbidden as exc:
         # Bot kicked / no rights — message is dead, clean up
         if _should_delete_on_bad_request(exc):

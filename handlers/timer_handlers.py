@@ -1,5 +1,6 @@
 """Timer inline buttons: prev/next/toggle."""
 
+import asyncio
 from datetime import datetime, timezone
 
 from telegram import Update
@@ -60,6 +61,8 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.update_active_timer(chat_id, lesson_id, session_date, current_index=new_index, remaining_seconds=timer_sec, running=0, started_at=None)
         if scheduler:
             await scheduler._refresh_timer_message(chat_id, lesson_id, session_date)
+        # small gap to avoid Flood (timer+queue edits in same callback)
+        await asyncio.sleep(0.35)
         # also refresh queue message to move << marker
         try:
             await refresh_queue_message(context.bot, chat_id, lesson_id, session_date, lang=lang)
@@ -79,6 +82,7 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.update_active_timer(chat_id, lesson_id, session_date, current_index=new_index, remaining_seconds=timer_sec, running=0, started_at=None)
         if scheduler:
             await scheduler._refresh_timer_message(chat_id, lesson_id, session_date)
+        await asyncio.sleep(0.35)
         try:
             await refresh_queue_message(context.bot, chat_id, lesson_id, session_date, lang=lang)
         except Exception:

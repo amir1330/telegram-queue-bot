@@ -9,11 +9,14 @@ in chat: buttons off, message unpinned. Sessions are keyed by stored
 session_date (lesson calendar day), so windows that cross midnight still work.
 """
 
+import asyncio
 import logging
+import time as time_mod
 from datetime import datetime, date, time, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from telegram.error import RetryAfter
 
 import db
 from message_builder import build_queue_text, build_timer_text, queue_markup, timer_markup
@@ -22,6 +25,23 @@ from queue_view import DAY_INDEX
 from timezone import chat_now, chat_tz
 
 logger = logging.getLogger(__name__)
+
+_TIMER_LOCKS: dict[int, asyncio.Lock] = {}
+_TIMER_LAST: dict[int, float] = {}
+
+
+async def _timer_throttle(chat_id: int):
+    lock = _TIMER_LOCKS.get(chat_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _TIMER_LOCKS[chat_id] = lock
+    async with lock:
+        now = time_mod.monotonic()
+        last = _TIMER_LAST.get(chat_id, 0)
+        wait = 0.4 - (now - last)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _TIMER_LAST[chat_id] = time_mod.monotonic()
 
 OPEN_PREFIX, DELETE_PREFIX = "open", "delete"
 TIMER_PREFIX = "timer"
@@ -229,7 +249,7 @@ class QueueScheduler:
         except Exception:
             pass
         self.scheduler.add_job(
-            self._tick, "interval", seconds=2,
+            self._tick, "interval", seconds=3,
             args=[chat_id, lesson_id],
             id=self._tick_job_id(chat_id, lesson_id),
             replace_existing=True, misfire_grace_time=30,
@@ -271,6 +291,7 @@ class QueueScheduler:
         running = bool(timer_row.get("running")) and remaining > 0
         text = build_timer_text(lesson, entries, timer_row.get("current_index", 0), remaining, running, lang=lang)
         markup = timer_markup(lang, running)  # always visible, so Next/Prev possible after time is up
+        await _timer_throttle(chat_id)
         try:
             await self.bot.edit_message_text(
                 chat_id=chat_id,
@@ -279,6 +300,8 @@ class QueueScheduler:
                 parse_mode="HTML",
                 reply_markup=markup,
             )
+        except RetryAfter as exc:
+            logger.warning("_refresh_timer: Flood RetryAfter %ss chat=%s lesson=%s session=%s", getattr(exc, "retry_after", "?"), chat_id, lesson_id, session_date)
         except Exception as exc:
             # keep row, log - similar to queue_message handling
             logger.warning("_refresh_timer: edit failed chat=%s lesson=%s session=%s: %s", chat_id, lesson_id, session_date, exc)

@@ -43,6 +43,7 @@ from handlers.info_handler import cmd_info
 from handlers.param_reply import on_param_reply
 from handlers.all_handler import cmd_all, learn_group_user, remember_user
 from handlers.queue_handlers import cmd_leave, cmd_queue, cmd_setname
+from handlers.reuse_handler import cmd_reuse
 from handlers.timer_handlers import cb_timer
 from handlers.tz_handler import cb_tz, cmd_tz
 from i18n import LANGS, tr
@@ -160,6 +161,8 @@ def main():
     application.add_handler(CommandHandler("before", cmd_before))
     application.add_handler(CommandHandler("duration", cmd_duration))
     application.add_handler(CommandHandler("timer", cmd_timer))
+    application.add_handler(CommandHandler("reuse", cmd_reuse))
+    application.add_handler(CommandHandler("copy", cmd_reuse))
     application.add_handler(CommandHandler("delete", cmd_delete))
     application.add_handler(CommandHandler("header", cmd_header))
     application.add_handler(CommandHandler("tz", cmd_tz))

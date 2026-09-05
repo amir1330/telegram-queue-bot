@@ -265,6 +265,7 @@ def admin_commands(lang="en"):
             "/before &lt;min&gt; - " + tr(lang, "admin_before"),
             "/duration &lt;min&gt; - " + tr(lang, "admin_duration"),
             "/timer &lt;sec&gt; - " + tr(lang, "admin_timer"),
+            "/reuse - " + tr(lang, "admin_reuse"),
             "/delete &lt;Day&gt; - " + tr(lang, "admin_delete"),
             "/header - " + tr(lang, "admin_header"),
             "/tz - " + tr(lang, "admin_tz"),

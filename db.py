@@ -474,6 +474,59 @@ def clear_queue(chat_id, lesson_id, session_date):
         conn.commit()
 
 
+def get_last_queue(chat_id, before_session_date=None):
+    """Return previous queue session with entries before given date."""
+    with _LOCK:
+        conn = _connect()
+        if before_session_date:
+            rows = conn.execute(
+                "SELECT lesson_id, session_date FROM queue_entries "
+                "WHERE chat_id = ? AND session_date < ? "
+                "GROUP BY lesson_id, session_date "
+                "ORDER BY session_date DESC, lesson_id DESC LIMIT 1",
+                (chat_id, before_session_date),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT lesson_id, session_date FROM queue_entries "
+                "WHERE chat_id = ? GROUP BY lesson_id, session_date "
+                "ORDER BY session_date DESC, lesson_id DESC LIMIT 1",
+                (chat_id,),
+            ).fetchall()
+        if not rows:
+            return None
+        lesson_id = rows[0]["lesson_id"]
+        session_date = rows[0]["session_date"]
+        entries = get_queue(chat_id, lesson_id, session_date)
+        if not entries:
+            return None
+        return {"lesson_id": lesson_id, "session_date": session_date, "entries": entries}
+
+
+def copy_queue(chat_id, from_lesson_id, from_session_date, to_lesson_id, to_session_date):
+    """Replace to-queue with copy of from-queue. Returns number of copied entries."""
+    src = get_queue(chat_id, from_lesson_id, from_session_date)
+    if not src:
+        return 0
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "DELETE FROM queue_entries WHERE chat_id = ? AND lesson_id = ? AND session_date = ?",
+            (chat_id, to_lesson_id, to_session_date),
+        )
+        for e in src:
+            try:
+                conn.execute(
+                    "INSERT INTO queue_entries (chat_id, lesson_id, user_id, display_name, joined_at, session_date) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (chat_id, to_lesson_id, e["user_id"], e["display_name"], _now(), to_session_date),
+                )
+            except sqlite3.IntegrityError:
+                pass
+        conn.commit()
+        return len(src)
+
+
 # ------------------------------------------------------------ user names
 
 def set_user_display_name(chat_id, user_id, display_name):

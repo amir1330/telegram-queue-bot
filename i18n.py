@@ -136,6 +136,10 @@ STRINGS = {
         "timer_first": "Already first in queue",
         "timer_stop_first": "Stop the timer first",
         "value_range_timer": "Value must be between 1 and 3600 seconds.",
+        "reuse_no_open": "No open queue to reuse into.",
+        "reuse_no_prev": "No previous queue found.",
+        "reuse_done": "Copied {n} from {prev_date} to current queue.",
+        "admin_reuse": "reuse previous queue for current lesson",
     },
     "ru": {
         # queue message
@@ -255,5 +259,9 @@ STRINGS = {
         "timer_first": "Уже первый в очереди",
         "timer_stop_first": "Сначала останови таймер",
         "value_range_timer": "Значение должно быть от 1 до 3600 секунд.",
+        "reuse_no_open": "Нет открытой очереди для применения.",
+        "reuse_no_prev": "Не найдена предыдущая очередь.",
+        "reuse_done": "Скопировано {n} из {prev_date} в текущую очередь.",
+        "admin_reuse": "применить очередь с прошлого урока",
     },
 }

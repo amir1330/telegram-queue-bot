@@ -52,7 +52,7 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer(text=tr(lang, "timer_first"), show_alert=True)
             return
         new_index = timer["current_index"] - 1
-        timer_sec = lesson.get("answer_timer_sec") or 60
+        timer_sec = lesson.get("answer_timer_sec") or 300
         # stop tick if running
         if scheduler:
             scheduler._stop_tick(chat_id, lesson_id)
@@ -67,7 +67,7 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer(text=tr(lang, "timer_last"), show_alert=True)
             return
         new_index = timer["current_index"] + 1
-        timer_sec = lesson.get("answer_timer_sec") or 60
+        timer_sec = lesson.get("answer_timer_sec") or 300
         if scheduler:
             scheduler._stop_tick(chat_id, lesson_id)
         db.update_active_timer(chat_id, lesson_id, session_date, current_index=new_index, remaining_seconds=timer_sec, running=0, started_at=None)
@@ -102,7 +102,7 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # start - if already 0, reset to full?
             remaining = timer["remaining_seconds"]
             if remaining <= 0:
-                remaining = lesson.get("answer_timer_sec") or 60
+                remaining = lesson.get("answer_timer_sec") or 300
                 db.update_active_timer(chat_id, lesson_id, session_date, remaining_seconds=remaining)
                 timer["remaining_seconds"] = remaining
             now_iso = datetime.now(timezone.utc).isoformat()

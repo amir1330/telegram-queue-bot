@@ -270,7 +270,7 @@ class QueueScheduler:
         remaining = self._compute_remaining(timer_row)
         running = bool(timer_row.get("running")) and remaining > 0
         text = build_timer_text(lesson, entries, timer_row.get("current_index", 0), remaining, running, lang=lang)
-        markup = timer_markup(lang, running) if remaining > 0 else None
+        markup = timer_markup(lang, running)  # always visible, so Next/Prev possible after time is up
         try:
             await self.bot.edit_message_text(
                 chat_id=chat_id,

@@ -230,12 +230,12 @@ def build_queue_text(lesson, session_date, entries, lang="en", closed=False):
 
 
 def build_timer_text(lesson, entries, current_index, remaining_seconds, running, lang="en"):
-    """HTML body for timer message: only title and time left (no queue, no date, no status)."""
+    """HTML body for timer message: title + time left or 'time is up' (no queue/date/status)."""
     title = tr(lang, "timer_title")
+    if remaining_seconds <= 0:
+        return f"{title}\n\n{tr(lang, 'timer_status_up')}"
     mm = remaining_seconds // 60
     ss = remaining_seconds % 60
-    # Lesson/date/queue/status explicitly removed per user request:
-    # timer is standalone, queue is above, current marker is in queue message as <<.
     return f"{title}\n\n{tr(lang, 'timer_time_left', time=f'{mm:02d}:{ss:02d}')}"
 
 

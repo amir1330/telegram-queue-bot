@@ -230,13 +230,20 @@ def build_queue_text(lesson, session_date, entries, lang="en", closed=False):
 
 
 def build_timer_text(lesson, entries, current_index, remaining_seconds, running, lang="en"):
-    """HTML body for timer message: title + time left or 'time is up' (no queue/date/status)."""
+    """HTML body for timer message: title + current name + time left or 'time is up'."""
     title = tr(lang, "timer_title")
+    lines = [title, ""]
+    if entries and 0 <= current_index < len(entries):
+        name = entries[current_index].get("display_name") or ""
+        lines.append(f"<b>{html.escape(name)}</b>")
+        lines.append("")
     if remaining_seconds <= 0:
-        return f"{title}\n\n{tr(lang, 'timer_status_up')}"
-    mm = remaining_seconds // 60
-    ss = remaining_seconds % 60
-    return f"{title}\n\n{tr(lang, 'timer_time_left', time=f'{mm:02d}:{ss:02d}')}"
+        lines.append(tr(lang, "timer_status_up"))
+    else:
+        mm = remaining_seconds // 60
+        ss = remaining_seconds % 60
+        lines.append(tr(lang, "timer_time_left", time=f"{mm:02d}:{ss:02d}"))
+    return "\n".join(lines)
 
 
 def student_commands(lang="en"):

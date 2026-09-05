@@ -229,7 +229,7 @@ class QueueScheduler:
         except Exception:
             pass
         self.scheduler.add_job(
-            self._tick, "interval", seconds=5,
+            self._tick, "interval", seconds=2,
             args=[chat_id, lesson_id],
             id=self._tick_job_id(chat_id, lesson_id),
             replace_existing=True, misfire_grace_time=30,

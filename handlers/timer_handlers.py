@@ -49,10 +49,10 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     scheduler = context.bot_data.get("scheduler")
 
     if data == "timer_prev":
-        if timer["current_index"] <= 0:
-            await query.answer(text=tr(lang, "timer_first"), show_alert=True)
+        if not entries:
+            await query.answer()
             return
-        new_index = timer["current_index"] - 1
+        new_index = (timer["current_index"] - 1) % len(entries)
         timer_sec = lesson.get("answer_timer_sec") or 300
         # stop tick if running
         if scheduler:
@@ -69,10 +69,10 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "timer_next":
-        if timer["current_index"] >= len(entries) - 1:
-            await query.answer(text=tr(lang, "timer_last"), show_alert=True)
+        if not entries:
+            await query.answer()
             return
-        new_index = timer["current_index"] + 1
+        new_index = (timer["current_index"] + 1) % len(entries)
         timer_sec = lesson.get("answer_timer_sec") or 300
         if scheduler:
             scheduler._stop_tick(chat_id, lesson_id)

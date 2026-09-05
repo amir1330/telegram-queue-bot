@@ -116,6 +116,19 @@ def queue_markup(lang="en"):
     )
 
 
+def timer_markup(lang="en", running=False):
+    label_toggle = tr(lang, "btn_timer_stop") if running else tr(lang, "btn_timer_start")
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("<< " + tr(lang, "btn_prev"), callback_data="timer_prev"),
+                InlineKeyboardButton(label_toggle, callback_data="timer_toggle"),
+                InlineKeyboardButton(tr(lang, "btn_next") + " >>", callback_data="timer_next"),
+            ]
+        ]
+    )
+
+
 def lang_markup(lang="en"):
     """Language selector buttons (shown by /lang and on the welcome)."""
     buttons = []
@@ -208,6 +221,31 @@ def build_queue_text(lesson, session_date, entries, lang="en", closed=False):
     return "\n".join(lines)
 
 
+def build_timer_text(lesson, entries, current_index, remaining_seconds, running, lang="en"):
+    """HTML body for timer message: title, time, list with current marker, time left, status."""
+    title = tr(lang, "timer_title")
+    when = tr(lang, "queue_when", day=day_long(lang, lesson["day_of_week"]), time=lesson["lesson_time"])
+    lines = [title, "", when, ""]
+    if entries:
+        for i, e in enumerate(entries, 1):
+            suffix = ""
+            if i - 1 == current_index:
+                suffix = " &lt;- " + tr(lang, "timer_current")
+            lines.append(f"<b>{i}.</b> {html.escape(e['display_name'])}{suffix}")
+    else:
+        lines.append(tr(lang, "timer_empty"))
+    lines.append("")
+    mm = remaining_seconds // 60
+    ss = remaining_seconds % 60
+    lines.append(tr(lang, "timer_time_left", time=f"{mm:02d}:{ss:02d}"))
+    if remaining_seconds == 0:
+        status = tr(lang, "timer_status_up")
+    else:
+        status = tr(lang, "timer_status_running" if running else "timer_status_paused")
+    lines.append(tr(lang, "timer_status", status=status))
+    return "\n".join(lines)
+
+
 def student_commands(lang="en"):
     return "\n".join(
         [
@@ -226,6 +264,7 @@ def admin_commands(lang="en"):
             "/setlesson &lt;Day&gt; &lt;HH:MM&gt; - " + tr(lang, "admin_setlesson"),
             "/before &lt;min&gt; - " + tr(lang, "admin_before"),
             "/duration &lt;min&gt; - " + tr(lang, "admin_duration"),
+            "/timer &lt;sec&gt; - " + tr(lang, "admin_timer"),
             "/delete &lt;Day&gt; - " + tr(lang, "admin_delete"),
             "/header - " + tr(lang, "admin_header"),
             "/tz - " + tr(lang, "admin_tz"),

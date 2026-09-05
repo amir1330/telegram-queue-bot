@@ -241,6 +241,119 @@ async def cmd_duration(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _window_command(update, context, field="lifetime_min")
 
 
+async def cmd_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    user = update.effective_user
+    if not await require_group(update, context):
+        return
+    lang = db.get_chat_lang(chat.id)
+    if not await is_admin(update, chat.id, user.id):
+        await reply_ephemeral(update, context, tr(lang, "admin_only"))
+        return
+    if not context.args:
+        lessons = db.get_lessons(chat.id)
+        if not lessons:
+            await reply_ephemeral(update, context, tr(lang, "no_lesson_yet"))
+            return
+        if len(lessons) == 1:
+            # single lesson -> ask seconds directly
+            await start_param_prompt(update, context, "timer", tr(lang, "prompt_timer"), payload=lessons[0]["day_of_week"])
+            return
+        await reply_keep(
+            update,
+            context,
+            tr(lang, "prompt_timer_day"),
+            reply_markup=lesson_days_markup(lang, lessons, "timer_day"),
+        )
+        return
+    await apply_timer(update, context, context.args)
+
+
+async def apply_timer(update: Update, context: ContextTypes.DEFAULT_TYPE, args) -> bool:
+    return await _apply_timer_seconds(update, context, args)
+
+
+async def _apply_timer_seconds(update: Update, context: ContextTypes.DEFAULT_TYPE, args) -> bool:
+    chat = update.effective_chat
+    user = update.effective_user
+    if not chat or not user:
+        return False
+    lang = db.get_chat_lang(chat.id)
+    day_of_week = None
+    value_text = None
+    if len(args) == 2:
+        day_of_week = _parse_day(args[0])
+        if day_of_week is None:
+            await reply_ephemeral(update, context, tr(lang, "invalid_day"))
+            return False
+        value_text = args[1]
+    elif len(args) == 1:
+        value_text = args[0]
+    else:
+        await reply_ephemeral(update, context, tr(lang, "usage_timer"))
+        return False
+    if not value_text.strip().isdigit():
+        await reply_ephemeral(update, context, tr(lang, "usage_timer"))
+        return False
+    value = int(value_text.strip())
+    if not (1 <= value <= 3600):
+        await reply_ephemeral(update, context, tr(lang, "value_range_timer"))
+        return False
+    if day_of_week is not None:
+        lesson = next((l for l in db.get_lessons(chat.id) if l["day_of_week"] == day_of_week), None)
+        if lesson is None:
+            await reply_ephemeral(update, context, tr(lang, "no_lesson_day", day=day_long(lang, day_of_week)))
+            return False
+    else:
+        lesson = db.get_last_lesson(chat.id)
+        if lesson is None:
+            await reply_ephemeral(update, context, tr(lang, "no_lesson_yet"))
+            return False
+        day_of_week = lesson["day_of_week"]
+    updated = db.set_answer_timer(chat.id, day_of_week, value)
+    if not updated:
+        await reply_ephemeral(update, context, tr(lang, "no_lesson_day", day=day_long(lang, day_of_week)))
+        return False
+    # refresh lesson not needed for timer cron, but keep for consistency
+    scheduler = context.bot_data.get("scheduler")
+    if scheduler:
+        await scheduler.refresh_lesson(updated)
+    await reply_ephemeral(update, context, tr(lang, "timer_set", day=day_long(lang, day_of_week), time=updated["lesson_time"], value=value))
+    return True
+
+
+async def cb_timer_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    chat = query.message.chat if query.message else None
+    user = query.from_user
+    if not chat or not user:
+        await query.answer()
+        return
+    lang = db.get_chat_lang(chat.id)
+    if not await is_admin(update, chat.id, user.id):
+        await query.answer(text=tr(lang, "toast_admins_only"), show_alert=True)
+        return
+    data = query.data or ""
+    if not data.startswith("timer_day_"):
+        await query.answer()
+        return
+    day_of_week = data[len("timer_day_"):]
+    if day_of_week not in DAYS_EN:
+        await query.answer()
+        return
+    lesson = next((l for l in db.get_lessons(chat.id) if l["day_of_week"] == day_of_week), None)
+    if lesson is None:
+        await query.answer(text=tr(lang, "no_lesson_yet"), show_alert=True)
+        return
+    await query.answer()
+    try:
+        await query.edit_message_text(tr(lang, "window_day_picked", day=day_long(lang, day_of_week), time=lesson["lesson_time"]))
+    except Exception:
+        pass
+    payload = json.dumps({"day": day_of_week, "ui_message_id": query.message.message_id})
+    await start_param_prompt(update, context, "timer", tr(lang, "prompt_timer"), payload=payload)
+
+
 async def apply_before(update: Update, context: ContextTypes.DEFAULT_TYPE, args) -> bool:
     return await apply_window(update, context, args, field="open_before_min")
 

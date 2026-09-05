@@ -33,6 +33,7 @@ ADMIN_COMMANDS = [
     ("setlesson", "Задать урок: день и время / Set a lesson"),
     ("before", "За сколько минут до урока открыть очередь / Open-before minutes"),
     ("duration", "Очередь закроется спустя N мин / Queue closes after N min"),
+    ("timer", "Таймер ответа в секундах / Answer timer seconds"),
     ("delete", "Удалить урок для дня / Remove a lesson"),
     ("header", "Текст в шапке очереди / Queue header text"),
     ("tz", "Часовой пояс чата / Chat timezone"),

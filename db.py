@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS lessons (
     open_before_min INTEGER DEFAULT 30,
     lifetime_min INTEGER DEFAULT 120,
     header_text TEXT,
+    answer_timer_sec INTEGER NOT NULL DEFAULT 60,
     UNIQUE (chat_id, day_of_week),
     FOREIGN KEY (chat_id) REFERENCES chats (chat_id)
 );
@@ -88,6 +89,18 @@ CREATE TABLE IF NOT EXISTS param_pending (
     payload TEXT,
     PRIMARY KEY (chat_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS active_timers (
+    chat_id INTEGER NOT NULL,
+    lesson_id INTEGER NOT NULL,
+    session_date TEXT NOT NULL,
+    message_id INTEGER NOT NULL,
+    current_index INTEGER NOT NULL DEFAULT 0,
+    remaining_seconds INTEGER NOT NULL,
+    running INTEGER NOT NULL DEFAULT 0,
+    started_at TEXT,
+    PRIMARY KEY (chat_id, lesson_id, session_date)
+);
 """
 
 
@@ -130,6 +143,9 @@ def _migrate(conn):
     }
     if lesson_cols and "header_text" not in lesson_cols:
         conn.execute("ALTER TABLE lessons ADD COLUMN header_text TEXT")
+        conn.commit()
+    if lesson_cols and "answer_timer_sec" not in lesson_cols:
+        conn.execute("ALTER TABLE lessons ADD COLUMN answer_timer_sec INTEGER NOT NULL DEFAULT 60")
         conn.commit()
     conn.execute(
         "DELETE FROM queue_entries WHERE entry_id NOT IN "
@@ -283,6 +299,7 @@ def remove_lesson(chat_id, day_of_week):
         conn.execute("DELETE FROM lessons WHERE lesson_id = ?", (lesson_id,))
         conn.execute("DELETE FROM queue_entries WHERE lesson_id = ?", (lesson_id,))
         conn.execute("DELETE FROM active_messages WHERE lesson_id = ?", (lesson_id,))
+        conn.execute("DELETE FROM active_timers WHERE lesson_id = ?", (lesson_id,))
         conn.commit()
         return lesson_id
 
@@ -322,6 +339,36 @@ def update_lesson_header(lesson_id, header_text):
             "SELECT * FROM lessons WHERE lesson_id = ?", (lesson_id,)
         ).fetchone()
         return dict(row) if row else None
+
+
+def set_answer_timer(chat_id, day_of_week, seconds):
+    """Set timer duration for a lesson day. Returns the updated lesson row or None."""
+    with _LOCK:
+        conn = _connect()
+        row = conn.execute(
+            "SELECT lesson_id FROM lessons WHERE chat_id = ? AND day_of_week = ?",
+            (chat_id, day_of_week),
+        ).fetchone()
+        if row is None:
+            return None
+        lesson_id = row["lesson_id"]
+        conn.execute(
+            "UPDATE lessons SET answer_timer_sec = ? WHERE lesson_id = ?",
+            (seconds, lesson_id),
+        )
+        conn.commit()
+        r = conn.execute("SELECT * FROM lessons WHERE lesson_id = ?", (lesson_id,)).fetchone()
+        return dict(r) if r else None
+
+
+def update_answer_timer(lesson_id, seconds):
+    """Set timer duration by lesson_id. Returns updated row."""
+    with _LOCK:
+        conn = _connect()
+        conn.execute("UPDATE lessons SET answer_timer_sec = ? WHERE lesson_id = ?", (seconds, lesson_id))
+        conn.commit()
+        r = conn.execute("SELECT * FROM lessons WHERE lesson_id = ?", (lesson_id,)).fetchone()
+        return dict(r) if r else None
 
 
 # ----------------------------------------------------------- chat state
@@ -569,6 +616,89 @@ def delete_active_message(chat_id, lesson_id, session_date):
             "DELETE FROM active_messages WHERE chat_id = ? AND lesson_id = ? AND session_date = ?",
             (chat_id, lesson_id, session_date),
         )
+        conn.commit()
+
+
+# -------------------------------------------------------- active timers
+
+def save_active_timer(chat_id, lesson_id, session_date, message_id, current_index=0, remaining_seconds=60, running=0, started_at=None):
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "INSERT INTO active_timers (chat_id, lesson_id, session_date, message_id, current_index, remaining_seconds, running, started_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(chat_id, lesson_id, session_date) DO UPDATE SET "
+            "message_id = excluded.message_id, current_index = excluded.current_index, "
+            "remaining_seconds = excluded.remaining_seconds, running = excluded.running, started_at = excluded.started_at",
+            (chat_id, lesson_id, session_date, message_id, current_index, remaining_seconds, running, started_at),
+        )
+        conn.commit()
+
+
+def get_active_timer(chat_id, lesson_id, session_date):
+    with _LOCK:
+        row = _connect().execute(
+            "SELECT * FROM active_timers WHERE chat_id = ? AND lesson_id = ? AND session_date = ?",
+            (chat_id, lesson_id, session_date),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_active_timers(chat_id=None, lesson_id=None, session_date=None):
+    query = "SELECT * FROM active_timers"
+    conds, params = [], []
+    if chat_id is not None:
+        conds.append("chat_id = ?")
+        params.append(chat_id)
+    if lesson_id is not None:
+        conds.append("lesson_id = ?")
+        params.append(lesson_id)
+    if session_date is not None:
+        conds.append("session_date = ?")
+        params.append(session_date)
+    if conds:
+        query += " WHERE " + " AND ".join(conds)
+    query += " ORDER BY session_date, lesson_id"
+    with _LOCK:
+        rows = _connect().execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_active_timer(chat_id, lesson_id, session_date, **fields):
+    allowed = {"message_id", "current_index", "remaining_seconds", "running", "started_at"}
+    sets, params = [], []
+    for k, v in fields.items():
+        if k in allowed:
+            sets.append(f"{k} = ?")
+            params.append(v)
+    if not sets:
+        return get_active_timer(chat_id, lesson_id, session_date)
+    params.extend([chat_id, lesson_id, session_date])
+    with _LOCK:
+        conn = _connect()
+        conn.execute(f"UPDATE active_timers SET {', '.join(sets)} WHERE chat_id = ? AND lesson_id = ? AND session_date = ?", params)
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM active_timers WHERE chat_id = ? AND lesson_id = ? AND session_date = ?",
+            (chat_id, lesson_id, session_date),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def delete_active_timer(chat_id, lesson_id, session_date):
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "DELETE FROM active_timers WHERE chat_id = ? AND lesson_id = ? AND session_date = ?",
+            (chat_id, lesson_id, session_date),
+        )
+        conn.commit()
+
+
+def delete_active_timers_for_lesson(lesson_id):
+    with _LOCK:
+        conn = _connect()
+        conn.execute("DELETE FROM active_timers WHERE lesson_id = ?", (lesson_id,))
         conn.commit()
 
 

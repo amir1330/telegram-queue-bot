@@ -22,6 +22,7 @@ from handlers.config_handlers import (
     apply_header,
     apply_setlesson,
     apply_setlesson_time,
+    apply_timer,
     parse_setlesson_payload,
 )
 from handlers.helpers import is_admin, reply_ephemeral, schedule_delete
@@ -36,7 +37,7 @@ from i18n import tr
 logger = logging.getLogger(__name__)
 
 _ADMIN_COMMANDS = frozenset(
-    {"setlesson", "setlesson_time", "before", "duration", "delete", "header"}
+    {"setlesson", "setlesson_time", "before", "duration", "delete", "header", "timer"}
 )
 
 _APPLY = {
@@ -44,6 +45,7 @@ _APPLY = {
     "setlesson": apply_setlesson,
     "before": apply_before,
     "duration": apply_duration,
+    "timer": apply_timer,
     "delete": apply_delete,
 }
 
@@ -64,7 +66,7 @@ def _looks_like_answer(command: str, text: str) -> bool:
         return bool(_TIME_RE.match(text))
     if command == "setname":
         return 0 < len(text) <= 60
-    if command in ("before", "duration"):
+    if command in ("before", "duration", "timer"):
         parts = text.split()
         if len(parts) == 1:
             return parts[0].isdigit()
@@ -145,7 +147,7 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         header_text = serialize_header_from_message(message)
         ok = await apply_header(update, context, day, header_text)
-    elif command in ("before", "duration") and pending.get("payload"):
+    elif command in ("before", "duration", "timer") and pending.get("payload"):
         day, ui_message_id = parse_setlesson_payload(pending.get("payload"))
         if day and len(args) == 1:
             args = [day, args[0]]

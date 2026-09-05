@@ -22,12 +22,14 @@ from handlers.config_handlers import (
     cb_delete_day,
     cb_header_day,
     cb_setlesson_day,
+    cb_timer_day,
     cb_window_day,
     cmd_before,
     cmd_delete,
     cmd_duration,
     cmd_header,
     cmd_setlesson,
+    cmd_timer,
 )
 from handlers.helpers import (
     TRIGGER_DELETE_SECONDS,
@@ -41,6 +43,7 @@ from handlers.info_handler import cmd_info
 from handlers.param_reply import on_param_reply
 from handlers.all_handler import cmd_all, learn_group_user, remember_user
 from handlers.queue_handlers import cmd_leave, cmd_queue, cmd_setname
+from handlers.timer_handlers import cb_timer
 from handlers.tz_handler import cb_tz, cmd_tz
 from i18n import LANGS, tr
 from message_builder import lang_markup, welcome_text
@@ -156,6 +159,7 @@ def main():
     application.add_handler(CommandHandler("setlesson", cmd_setlesson))
     application.add_handler(CommandHandler("before", cmd_before))
     application.add_handler(CommandHandler("duration", cmd_duration))
+    application.add_handler(CommandHandler("timer", cmd_timer))
     application.add_handler(CommandHandler("delete", cmd_delete))
     application.add_handler(CommandHandler("header", cmd_header))
     application.add_handler(CommandHandler("tz", cmd_tz))
@@ -176,6 +180,8 @@ def main():
     )
     application.add_handler(CallbackQueryHandler(cb_delete_day, pattern="^delete_day_"))
     application.add_handler(CallbackQueryHandler(cb_header_day, pattern="^header_day_"))
+    application.add_handler(CallbackQueryHandler(cb_timer_day, pattern="^timer_day_"))
+    application.add_handler(CallbackQueryHandler(cb_timer, pattern="^timer_(prev|next|toggle)$"))
     application.add_handler(CallbackQueryHandler(on_button, pattern="^(join|leave)$"))
     application.add_handler(
         ChatMemberHandler(on_chat_member, ChatMemberHandler.ANY_CHAT_MEMBER)

@@ -10,13 +10,13 @@ session_date (lesson calendar day), so windows that cross midnight still work.
 """
 
 import logging
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, date, time, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 import db
-from message_builder import build_queue_text, queue_markup
+from message_builder import build_queue_text, build_timer_text, queue_markup, timer_markup
 from queue_message import refresh_queue_message
 from queue_view import DAY_INDEX
 from timezone import chat_now, chat_tz
@@ -24,6 +24,8 @@ from timezone import chat_now, chat_tz
 logger = logging.getLogger(__name__)
 
 OPEN_PREFIX, DELETE_PREFIX = "open", "delete"
+TIMER_PREFIX = "timer"
+TICK_PREFIX = "timertick"
 
 
 def _parse_time(hhmm):
@@ -88,12 +90,17 @@ class QueueScheduler:
         delete_trigger = CronTrigger(
             day_of_week=delete_t[0], hour=delete_t[1], minute=delete_t[2], timezone=tz
         )
-        return open_trigger, delete_trigger
+        h, m = _parse_time(lesson["lesson_time"])
+        dow = DAY_INDEX[lesson["day_of_week"]]
+        timer_trigger = CronTrigger(
+            day_of_week=dow, hour=h, minute=m, timezone=tz
+        )
+        return open_trigger, delete_trigger, timer_trigger
 
     def schedule_lesson(self, lesson):
         """Add/update the jobs for a lesson (idempotent)."""
         chat_id, lesson_id = lesson["chat_id"], lesson["lesson_id"]
-        open_trig, delete_trig = self._triggers(lesson)
+        open_trig, delete_trig, timer_trig = self._triggers(lesson)
         self.scheduler.add_job(
             self.open_queue, open_trig,
             args=[chat_id, lesson_id],
@@ -106,13 +113,24 @@ class QueueScheduler:
             id=f"{DELETE_PREFIX}_{chat_id}_{lesson_id}",
             replace_existing=True, misfire_grace_time=3600,
         )
+        self.scheduler.add_job(
+            self.open_timer, timer_trig,
+            args=[chat_id, lesson_id],
+            id=f"{TIMER_PREFIX}_{chat_id}_{lesson_id}",
+            replace_existing=True, misfire_grace_time=3600,
+        )
 
     def unschedule_lesson(self, chat_id, lesson_id):
-        for prefix in (OPEN_PREFIX, DELETE_PREFIX):
+        for prefix in (OPEN_PREFIX, DELETE_PREFIX, TIMER_PREFIX):
             try:
                 self.scheduler.remove_job(f"{prefix}_{chat_id}_{lesson_id}")
             except Exception:
                 pass
+        # also remove any ticking job
+        try:
+            self.scheduler.remove_job(f"{TICK_PREFIX}_{chat_id}_{lesson_id}")
+        except Exception:
+            pass
 
     # --------------------------------------------------- job callbacks
 
@@ -184,6 +202,138 @@ class QueueScheduler:
             logger.warning("close_queue: unpin failed in %s: %s", chat_id, exc)
 
         await refresh_queue_message(self.bot, chat_id, lesson_id, session_date, lang=lang)
+
+        # also stop timer tick and clean timer message (keep text, strip keyboard)
+        try:
+            self.scheduler.remove_job(f"{TICK_PREFIX}_{chat_id}_{lesson_id}")
+        except Exception:
+            pass
+        timer_row = db.get_active_timer(chat_id, lesson_id, session_date)
+        if timer_row:
+            try:
+                await self.bot.edit_message_reply_markup(
+                    chat_id=chat_id, message_id=timer_row["message_id"], reply_markup=None
+                )
+            except Exception as exc:
+                logger.debug("close_queue: strip timer markup failed: %s", exc)
+            db.delete_active_timer(chat_id, lesson_id, session_date)
+
+    # --------------------------------------------------- timer jobs
+
+    def _tick_job_id(self, chat_id, lesson_id):
+        return f"{TICK_PREFIX}_{chat_id}_{lesson_id}"
+
+    def _start_tick(self, chat_id, lesson_id):
+        try:
+            self.scheduler.remove_job(self._tick_job_id(chat_id, lesson_id))
+        except Exception:
+            pass
+        self.scheduler.add_job(
+            self._tick, "interval", seconds=5,
+            args=[chat_id, lesson_id],
+            id=self._tick_job_id(chat_id, lesson_id),
+            replace_existing=True, misfire_grace_time=30,
+        )
+
+    def _stop_tick(self, chat_id, lesson_id):
+        try:
+            self.scheduler.remove_job(self._tick_job_id(chat_id, lesson_id))
+        except Exception:
+            pass
+
+    def _compute_remaining(self, timer_row):
+        if not timer_row.get("running"):
+            return timer_row["remaining_seconds"]
+        started_at = timer_row.get("started_at")
+        if not started_at:
+            return timer_row["remaining_seconds"]
+        try:
+            start_dt = datetime.fromisoformat(started_at)
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            return timer_row["remaining_seconds"]
+        now = datetime.now(timezone.utc)
+        elapsed = int((now - start_dt).total_seconds())
+        remaining = timer_row["remaining_seconds"] - elapsed
+        return max(0, remaining)
+
+    async def _refresh_timer_message(self, chat_id, lesson_id, session_date):
+        lesson = db.get_lesson_by_id(lesson_id)
+        if not lesson:
+            return
+        timer_row = db.get_active_timer(chat_id, lesson_id, session_date)
+        if not timer_row:
+            return
+        lang = db.get_chat_lang(chat_id)
+        entries = db.get_queue(chat_id, lesson_id, session_date)
+        remaining = self._compute_remaining(timer_row)
+        running = bool(timer_row.get("running")) and remaining > 0
+        text = build_timer_text(lesson, entries, timer_row.get("current_index", 0), remaining, running, lang=lang)
+        markup = timer_markup(lang, running) if remaining > 0 else None
+        try:
+            await self.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=timer_row["message_id"],
+                text=text,
+                parse_mode="HTML",
+                reply_markup=markup,
+            )
+        except Exception as exc:
+            # keep row, log - similar to queue_message handling
+            logger.warning("_refresh_timer: edit failed chat=%s lesson=%s session=%s: %s", chat_id, lesson_id, session_date, exc)
+            # if message not found, clean up
+            if "message to edit not found" in str(exc).lower() or "message not found" in str(exc).lower() or "chat not found" in str(exc).lower():
+                db.delete_active_timer(chat_id, lesson_id, session_date)
+                self._stop_tick(chat_id, lesson_id)
+
+    async def open_timer(self, chat_id, lesson_id, session_date=None):
+        lesson = db.get_lesson_by_id(lesson_id)
+        if not lesson:
+            return
+        lang = db.get_chat_lang(chat_id)
+        if session_date is None:
+            # timer fires at lesson_time exact -> session_date is today in chat tz
+            session_date = chat_now(chat_id).date().isoformat()
+            # adjust if lesson day does not match today (e.g. triggered via cron on correct dow)
+            # but chat_now already on correct dow, so just use it
+        existing = db.get_active_timer(chat_id, lesson_id, session_date)
+        if existing:
+            return
+        entries = db.get_queue(chat_id, lesson_id, session_date)
+        if not entries:
+            # nothing to time - don't send empty timer
+            return
+        timer_sec = lesson.get("answer_timer_sec") or 60
+        text = build_timer_text(lesson, entries, 0, timer_sec, False, lang=lang)
+        try:
+            msg = await self.bot.send_message(
+                chat_id=chat_id, text=text, parse_mode="HTML", reply_markup=timer_markup(lang, False)
+            )
+        except Exception as exc:
+            logger.warning("open_timer: send failed chat=%s: %s", chat_id, exc)
+            return
+        db.save_active_timer(chat_id, lesson_id, session_date, msg.message_id, current_index=0, remaining_seconds=timer_sec, running=0, started_at=None)
+
+    async def _tick(self, chat_id, lesson_id):
+        # find the open timer for this lesson (there should be at most one running)
+        timers = db.get_active_timers(chat_id=chat_id, lesson_id=lesson_id)
+        # find running one
+        target = None
+        for t in timers:
+            if t.get("running"):
+                target = t
+                break
+        if not target:
+            self._stop_tick(chat_id, lesson_id)
+            return
+        remaining = self._compute_remaining(target)
+        if remaining <= 0:
+            db.update_active_timer(target["chat_id"], target["lesson_id"], target["session_date"], remaining_seconds=0, running=0, started_at=None)
+            self._stop_tick(chat_id, lesson_id)
+            await self._refresh_timer_message(target["chat_id"], target["lesson_id"], target["session_date"])
+            return
+        await self._refresh_timer_message(target["chat_id"], target["lesson_id"], target["session_date"])
 
     async def discard_queue_message(self, chat_id, lesson_id, session_date, message_id, lang="en"):
         """Unpin and strip buttons from a queue message (e.g. after /delete)."""
@@ -263,6 +413,17 @@ class QueueScheduler:
                 await self.close_queue(
                     row["chat_id"], row["lesson_id"], session_date=row["session_date"]
                 )
+
+        # active timers: pause any running ones (simplification, don't restore tick accurately)
+        for row in db.get_active_timers():
+            if row.get("running"):
+                # compute remaining up to now and pause
+                remaining = self._compute_remaining(row)
+                db.update_active_timer(row["chat_id"], row["lesson_id"], row["session_date"], remaining_seconds=remaining, running=0, started_at=None)
+                try:
+                    await self._refresh_timer_message(row["chat_id"], row["lesson_id"], row["session_date"])
+                except Exception as exc:
+                    logger.warning("restore: refresh timer failed %s", exc)
 
         for lesson in db.get_all_lessons():
             await self.maybe_catchup_open(lesson)

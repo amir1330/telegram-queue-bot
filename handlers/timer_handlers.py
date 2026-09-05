@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 
 import db
 from i18n import tr
+from queue_message import refresh_queue_message
 
 
 def _find_timer_by_message(chat_id, message_id):
@@ -59,6 +60,11 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.update_active_timer(chat_id, lesson_id, session_date, current_index=new_index, remaining_seconds=timer_sec, running=0, started_at=None)
         if scheduler:
             await scheduler._refresh_timer_message(chat_id, lesson_id, session_date)
+        # also refresh queue message to move << marker
+        try:
+            await refresh_queue_message(context.bot, chat_id, lesson_id, session_date, lang=lang)
+        except Exception:
+            pass
         await query.answer()
         return
 
@@ -73,6 +79,10 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.update_active_timer(chat_id, lesson_id, session_date, current_index=new_index, remaining_seconds=timer_sec, running=0, started_at=None)
         if scheduler:
             await scheduler._refresh_timer_message(chat_id, lesson_id, session_date)
+        try:
+            await refresh_queue_message(context.bot, chat_id, lesson_id, session_date, lang=lang)
+        except Exception:
+            pass
         await query.answer()
         return
 

@@ -200,7 +200,7 @@ def format_lesson_line(lesson, lang="en"):
 
 
 def build_queue_text(lesson, session_date, entries, lang="en", closed=False):
-    """HTML body: optional header note, then title/time, then the joined list."""
+    """HTML body: optional header note, then title/time, then the joined list with current marker <<."""
     title = tr(lang, "queue_title_closed" if closed else "queue_title")
     when = tr(lang, "queue_when", day=day_long(lang, lesson["day_of_week"]), time=lesson["lesson_time"])
 
@@ -212,38 +212,31 @@ def build_queue_text(lesson, session_date, entries, lang="en", closed=False):
     lines.extend([title, when])
     if entries:
         lines.append("")
-        lines.append(
-            "\n".join(
-                f"<b>{i}.</b> {html.escape(e['display_name'])}"
-                for i, e in enumerate(entries, 1)
-            )
-        )
+        # current speaker from active timer, if any
+        current_index = None
+        try:
+            import db as _db
+            t = _db.get_active_timer(lesson["chat_id"], lesson["lesson_id"], session_date)
+            if t is not None:
+                current_index = t.get("current_index")
+        except Exception:
+            current_index = None
+        parts = []
+        for i, e in enumerate(entries, 1):
+            suffix = " &lt;&lt;" if current_index is not None and i - 1 == current_index else ""
+            parts.append(f"<b>{i}.</b> {html.escape(e['display_name'])}{suffix}")
+        lines.append("\n".join(parts))
     return "\n".join(lines)
 
 
 def build_timer_text(lesson, entries, current_index, remaining_seconds, running, lang="en"):
-    """HTML body for timer message: title, time, list with current marker, time left, status."""
+    """HTML body for timer message: only title and time left (no queue, no date, no status)."""
     title = tr(lang, "timer_title")
-    when = tr(lang, "queue_when", day=day_long(lang, lesson["day_of_week"]), time=lesson["lesson_time"])
-    lines = [title, "", when, ""]
-    if entries:
-        for i, e in enumerate(entries, 1):
-            suffix = ""
-            if i - 1 == current_index:
-                suffix = " &lt;- " + tr(lang, "timer_current")
-            lines.append(f"<b>{i}.</b> {html.escape(e['display_name'])}{suffix}")
-    else:
-        lines.append(tr(lang, "timer_empty"))
-    lines.append("")
     mm = remaining_seconds // 60
     ss = remaining_seconds % 60
-    lines.append(tr(lang, "timer_time_left", time=f"{mm:02d}:{ss:02d}"))
-    if remaining_seconds == 0:
-        status = tr(lang, "timer_status_up")
-    else:
-        status = tr(lang, "timer_status_running" if running else "timer_status_paused")
-    lines.append(tr(lang, "timer_status", status=status))
-    return "\n".join(lines)
+    # Lesson/date/queue/status explicitly removed per user request:
+    # timer is standalone, queue is above, current marker is in queue message as <<.
+    return f"{title}\n\n{tr(lang, 'timer_time_left', time=f'{mm:02d}:{ss:02d}')}"
 
 
 def student_commands(lang="en"):

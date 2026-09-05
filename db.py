@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS lessons (
     open_before_min INTEGER DEFAULT 30,
     lifetime_min INTEGER DEFAULT 120,
     header_text TEXT,
-    answer_timer_sec INTEGER NOT NULL DEFAULT 300,
+    answer_timer_sec INTEGER NOT NULL DEFAULT 420,
     UNIQUE (chat_id, day_of_week),
     FOREIGN KEY (chat_id) REFERENCES chats (chat_id)
 );
@@ -145,18 +145,18 @@ def _migrate(conn):
         conn.execute("ALTER TABLE lessons ADD COLUMN header_text TEXT")
         conn.commit()
     if lesson_cols and "answer_timer_sec" not in lesson_cols:
-        conn.execute("ALTER TABLE lessons ADD COLUMN answer_timer_sec INTEGER NOT NULL DEFAULT 300")
+        conn.execute("ALTER TABLE lessons ADD COLUMN answer_timer_sec INTEGER NOT NULL DEFAULT 420")
         conn.commit()
         # ensure existing rows get new default
         try:
-            conn.execute("UPDATE lessons SET answer_timer_sec = 300 WHERE answer_timer_sec IS NULL OR answer_timer_sec = 60")
+            conn.execute("UPDATE lessons SET answer_timer_sec = 420 WHERE answer_timer_sec IS NULL OR answer_timer_sec IN (60, 300)")
             conn.commit()
         except Exception:
             pass
     else:
-        # migrate existing defaults from 60 to 300 (one-time)
+        # migrate existing defaults from 60/300 to 420 (one-time, 7 min)
         try:
-            conn.execute("UPDATE lessons SET answer_timer_sec = 300 WHERE answer_timer_sec = 60")
+            conn.execute("UPDATE lessons SET answer_timer_sec = 420 WHERE answer_timer_sec IN (60, 300)")
             conn.commit()
         except Exception:
             pass
@@ -634,7 +634,7 @@ def delete_active_message(chat_id, lesson_id, session_date):
 
 # -------------------------------------------------------- active timers
 
-def save_active_timer(chat_id, lesson_id, session_date, message_id, current_index=0, remaining_seconds=300, running=0, started_at=None):
+def save_active_timer(chat_id, lesson_id, session_date, message_id, current_index=0, remaining_seconds=420, running=0, started_at=None):
     with _LOCK:
         conn = _connect()
         conn.execute(

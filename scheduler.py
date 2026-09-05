@@ -327,7 +327,7 @@ class QueueScheduler:
         if not entries:
             # nothing to time - don't send empty timer
             return
-        timer_sec = lesson.get("answer_timer_sec") or 300
+        timer_sec = lesson.get("answer_timer_sec") or 420
         text = build_timer_text(lesson, entries, 0, timer_sec, False, lang=lang)
         try:
             msg = await self.bot.send_message(

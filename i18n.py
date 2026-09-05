@@ -133,6 +133,7 @@ STRINGS = {
         "timer_set": "{day} {time}: timer {value} sec.",
         "timer_last": "Already last in queue",
         "timer_first": "Already first in queue",
+        "timer_stop_first": "Stop the timer first",
         "value_range_timer": "Value must be between 1 and 3600 seconds.",
     },
     "ru": {
@@ -250,6 +251,7 @@ STRINGS = {
         "timer_set": "{day} {time}: таймер {value} сек.",
         "timer_last": "Уже последний в очереди",
         "timer_first": "Уже первый в очереди",
+        "timer_stop_first": "Сначала останови таймер",
         "value_range_timer": "Значение должно быть от 1 до 3600 секунд.",
     },
 }

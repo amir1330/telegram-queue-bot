@@ -50,6 +50,9 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     scheduler = context.bot_data.get("scheduler")
 
     if data == "timer_prev":
+        if timer.get("running"):
+            await query.answer(text=tr(lang, "timer_stop_first"), show_alert=True)
+            return
         if not entries:
             await query.answer()
             return
@@ -72,6 +75,9 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "timer_next":
+        if timer.get("running"):
+            await query.answer(text=tr(lang, "timer_stop_first"), show_alert=True)
+            return
         if not entries:
             await query.answer()
             return

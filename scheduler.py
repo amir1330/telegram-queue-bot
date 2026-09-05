@@ -4,6 +4,7 @@ One lesson row maps to two cron jobs with predictable ids:
   open_{chat_id}_{lesson_id}    at lesson_time - open_before_min
   delete_{chat_id}_{lesson_id}  at lesson_time + lifetime_min  (closes join window)
 
+Timer message is sent 10s after the queue message (separate message under queue).
 The queue stays joinable from open until close. At lifetime end the list stays
 in chat: buttons off, message unpinned. Sessions are keyed by stored
 session_date (lesson calendar day), so windows that cross midnight still work.
@@ -110,17 +111,12 @@ class QueueScheduler:
         delete_trigger = CronTrigger(
             day_of_week=delete_t[0], hour=delete_t[1], minute=delete_t[2], timezone=tz
         )
-        h, m = _parse_time(lesson["lesson_time"])
-        dow = DAY_INDEX[lesson["day_of_week"]]
-        timer_trigger = CronTrigger(
-            day_of_week=dow, hour=h, minute=m, timezone=tz
-        )
-        return open_trigger, delete_trigger, timer_trigger
+        return open_trigger, delete_trigger
 
     def schedule_lesson(self, lesson):
         """Add/update the jobs for a lesson (idempotent)."""
         chat_id, lesson_id = lesson["chat_id"], lesson["lesson_id"]
-        open_trig, delete_trig, timer_trig = self._triggers(lesson)
+        open_trig, delete_trig = self._triggers(lesson)
         self.scheduler.add_job(
             self.open_queue, open_trig,
             args=[chat_id, lesson_id],
@@ -133,12 +129,11 @@ class QueueScheduler:
             id=f"{DELETE_PREFIX}_{chat_id}_{lesson_id}",
             replace_existing=True, misfire_grace_time=3600,
         )
-        self.scheduler.add_job(
-            self.open_timer, timer_trig,
-            args=[chat_id, lesson_id],
-            id=f"{TIMER_PREFIX}_{chat_id}_{lesson_id}",
-            replace_existing=True, misfire_grace_time=3600,
-        )
+        # remove legacy timer cron if exists (now timer is 10s after queue)
+        try:
+            self.scheduler.remove_job(f"{TIMER_PREFIX}_{chat_id}_{lesson_id}")
+        except Exception:
+            pass
 
     def unschedule_lesson(self, chat_id, lesson_id):
         for prefix in (OPEN_PREFIX, DELETE_PREFIX, TIMER_PREFIX):
@@ -146,6 +141,13 @@ class QueueScheduler:
                 self.scheduler.remove_job(f"{prefix}_{chat_id}_{lesson_id}")
             except Exception:
                 pass
+        # also remove any pending delayed timer jobs for this lesson
+        for job in list(self.scheduler.get_jobs()):
+            if job.id.startswith(f"timer_delay_{chat_id}_{lesson_id}_"):
+                try:
+                    self.scheduler.remove_job(job.id)
+                except Exception:
+                    pass
         # also remove any ticking job
         try:
             self.scheduler.remove_job(f"{TICK_PREFIX}_{chat_id}_{lesson_id}")
@@ -185,6 +187,20 @@ class QueueScheduler:
             logger.warning("open_queue: pin failed in %s: %s", chat_id, exc)
         db.save_active_message(chat_id, lesson_id, session_date, msg.message_id, "open")
         await refresh_queue_message(self.bot, chat_id, lesson_id, session_date, lang=lang)
+        # schedule timer 10s after queue (separate message under queue)
+        try:
+            run_date = datetime.now(timezone.utc) + timedelta(seconds=10)
+            self.scheduler.add_job(
+                self.open_timer,
+                "date",
+                run_date=run_date,
+                args=[chat_id, lesson_id, session_date],
+                id=f"timer_delay_{chat_id}_{lesson_id}_{session_date}",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
+        except Exception as exc:
+            logger.warning("open_queue: schedule timer_delay failed %s", exc)
 
     async def close_queue(self, chat_id, lesson_id, session_date=None):
         """End the join window: unpin, drop buttons, keep the final list in chat.
@@ -223,9 +239,13 @@ class QueueScheduler:
 
         await refresh_queue_message(self.bot, chat_id, lesson_id, session_date, lang=lang)
 
-        # also stop timer tick and clean timer message (keep text, strip keyboard)
+        # also stop timer tick, cancel pending timer_delay and clean timer message
         try:
             self.scheduler.remove_job(f"{TICK_PREFIX}_{chat_id}_{lesson_id}")
+        except Exception:
+            pass
+        try:
+            self.scheduler.remove_job(f"timer_delay_{chat_id}_{lesson_id}_{session_date}")
         except Exception:
             pass
         timer_row = db.get_active_timer(chat_id, lesson_id, session_date)
@@ -447,6 +467,24 @@ class QueueScheduler:
                     await self._refresh_timer_message(row["chat_id"], row["lesson_id"], row["session_date"])
                 except Exception as exc:
                     logger.warning("restore: refresh timer failed %s", exc)
+
+        # ensure timer is scheduled 10s after queue for open queues without timer
+        for row in db.get_active_messages(chat_id=None, status="open"):
+            if not db.get_active_timer(row["chat_id"], row["lesson_id"], row["session_date"]):
+                # check if there are entries to time; if empty, open_timer will noop
+                try:
+                    run_date = datetime.now(timezone.utc) + timedelta(seconds=10)
+                    self.scheduler.add_job(
+                        self.open_timer,
+                        "date",
+                        run_date=run_date,
+                        args=[row["chat_id"], row["lesson_id"], row["session_date"]],
+                        id=f"timer_delay_{row['chat_id']}_{row['lesson_id']}_{row['session_date']}",
+                        replace_existing=True,
+                        misfire_grace_time=3600,
+                    )
+                except Exception as exc:
+                    logger.warning("restore: schedule timer_delay failed %s", exc)
 
         for lesson in db.get_all_lessons():
             await self.maybe_catchup_open(lesson)

@@ -358,6 +358,19 @@ class QueueScheduler:
             return
         db.save_active_timer(chat_id, lesson_id, session_date, msg.message_id, current_index=0, remaining_seconds=timer_sec, running=0, started_at=None)
 
+    async def ensure_timer(self, chat_id, lesson_id, session_date):
+        """Create the timer message if an open session has people in the queue
+        but no timer yet. Used when the first member joins an empty queue, since
+        the one-shot timer_delay attempt at +10s silently skipped an empty queue.
+        """
+        existing = db.get_active_timer(chat_id, lesson_id, session_date)
+        if existing:
+            return
+        entries = db.get_queue(chat_id, lesson_id, session_date)
+        if not entries:
+            return
+        await self.open_timer(chat_id, lesson_id, session_date=session_date)
+
     async def _tick(self, chat_id, lesson_id):
         # find the open timer for this lesson (there should be at most one running)
         timers = db.get_active_timers(chat_id=chat_id, lesson_id=lesson_id)

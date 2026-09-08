@@ -1,6 +1,6 @@
 # Secrets / runtime data
 .env
-queue_bot.db
+*.db
 
 # Python
 __pycache__/

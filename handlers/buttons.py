@@ -60,6 +60,9 @@ async def _do_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     await refresh_queue_message(context.bot, chat.id, lesson_id, sdate, lang=lang)
+    scheduler = context.bot_data.get("scheduler")
+    if scheduler:
+        await scheduler.ensure_timer(chat.id, lesson_id, sdate)
     await query.answer(text=tr(lang, "toast_joined", pos=pos))
 
 

@@ -39,6 +39,9 @@ async def cmd_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     pos = db.position_of(chat.id, open_session["lesson_id"], sdate, user.id)
     await refresh_queue_message(context.bot, chat.id, open_session["lesson_id"], sdate, lang=lang)
+    scheduler = context.bot_data.get("scheduler")
+    if scheduler:
+        await scheduler.ensure_timer(chat.id, open_session["lesson_id"], sdate)
     label = f"{day_long(lang, lesson['day_of_week'])} {lesson['lesson_time']}" if lesson else sdate
     await reply_ephemeral(
         update, context, tr(lang, "q_joined_at", name=name, pos=pos, label=label)

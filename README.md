@@ -43,6 +43,13 @@ students join/leave, closes it at lesson time, and cleans it up afterwards.
 | `/delete Monday` | remove a lesson (English or Russian day names work) |
 | `/tz` | set the chat's timezone (IANA name or UTC+HH:MM) |
 | `/ping` | mention known members who are not in the open queue |
+| `/meet` | open an on-demand Jitsi room (joins open 5 min) |
+| `/endmeet` | force-close the active Jitsi room |
+| `/setask Monday 12:00 \| Q? \| Yes \| No \| ?Reason` | schedule a question with answers |
+| `/asks` | list this chat's scheduled questions |
+| `/delask <id>` | delete a scheduled question |
+| `/askduration [id] <min>` | how long answers stay open (default 360) |
+| `/askpost <id>` | post a question now (testing) |
 
 Config changes apply to the scheduler immediately — no restart needed.
 
@@ -63,6 +70,40 @@ into the flow. One-shot forms with args still work as above.
 
 Bare `/setname` prompts only you for a name (same selective reply pattern).
 One-shot `/setname <name>` still applies immediately.
+
+## On-demand video rooms (/meet)
+
+Groups only, admins only. `/meet` posts one message with a Join button
+(deep link into the bot DM). Members tapping it get a personal Jitsi link;
+admins enter as moderators, everyone else as guests. Non-members and expired
+links are refused. Joins stay open 5 minutes; at the deadline the session
+closes and the group message is deleted, so `/meet` works again.
+`/endmeet` closes early.
+
+Limitation (Phase 1): a call already running keeps going after the 5 minutes
+— expiry only blocks new joins. Occupancy-based auto-close was investigated
+on the VPS (stable-11248): `mod_muc_size` needs an `app_id` module option the
+stock templates cannot set, and `mod_muc_census` looks up
+`conference.<host>` which does not match this deployment's `muc.meet.jitsi`,
+so neither worked. The bot stays on Phase 1.
+
+Requires JWT auth on Jitsi (`AUTH_TYPE=jwt`, `JWT_APP_ID=lessons`, …) and bot
+env `JITSI_DOMAIN` + `JITSI_JWT_SECRET` (server `.env` only).
+
+## Scheduled questions (/setask)
+
+Admins schedule repeating questions, e.g.
+`/setask Monday 12:00 | Are you coming Mon 18:00? | Yes | No | ?I have a reason`
+(`?` = answering needs a reason). Times use the chat timezone. The bot posts
+the question weekly with one button per option and live-edits the tally as
+people answer; tapping your answer again retracts it. `?` options prompt only
+you for a reason (3-minute window), then save. Answers close after
+`duration_min` (default 360); buttons are removed and the tally stays.
+
+## Owner rooms (/room)
+
+DM-only, owner-only (`OWNER_ID` env). `/room [name]` replies with a moderator
+link (8h) and a shareable guest link (3h). Independent of `/meet`.
 
 ## Requirements for a group
 

@@ -17,7 +17,18 @@ from telegram.ext import (
 
 import db
 from command_menu import sync_all_chats, sync_commands_for_chat
+from handlers.ask_handlers import (
+    cb_setask_day,
+    cmd_askduration,
+    cmd_askpost,
+    cmd_asks,
+    cmd_delask,
+    cmd_setask,
+    on_ask_button,
+)
 from handlers.buttons import on_button
+from handlers.meet_handler import cmd_endmeet, cmd_meet, handle_meet_deeplink
+from handlers.room_handler import cmd_room, owner_id
 from handlers.config_handlers import (
     cb_delete_day,
     cb_header_day,
@@ -56,6 +67,12 @@ logger = logging.getLogger(__name__)
 
 
 async def cmd_start(update: Update, context):
+    # Deep-link join (t.me/<bot>?start=m_<session_id>) handled before welcome.
+    try:
+        if context.args and await handle_meet_deeplink(update, context):
+            return
+    except Exception as exc:
+        logger.warning("cmd_start deeplink failed: %s", exc)
     chat = update.effective_chat
     lang = db.get_chat_lang(chat.id) if chat else db.DEFAULT_LANG
     await cleanup_trigger(update, context, seconds=TRIGGER_DELETE_SECONDS)
@@ -167,6 +184,14 @@ def main():
     application.add_handler(CommandHandler("header", cmd_header))
     application.add_handler(CommandHandler("tz", cmd_tz))
     application.add_handler(CommandHandler("all", cmd_all))
+    application.add_handler(CommandHandler("meet", cmd_meet))
+    application.add_handler(CommandHandler("endmeet", cmd_endmeet))
+    application.add_handler(CommandHandler("setask", cmd_setask))
+    application.add_handler(CommandHandler("asks", cmd_asks))
+    application.add_handler(CommandHandler("delask", cmd_delask))
+    application.add_handler(CommandHandler("askduration", cmd_askduration))
+    application.add_handler(CommandHandler("askpost", cmd_askpost))
+    application.add_handler(CommandHandler("room", cmd_room))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, on_param_reply)
     )
@@ -186,6 +211,8 @@ def main():
     application.add_handler(CallbackQueryHandler(cb_timer_day, pattern="^timer_day_"))
     application.add_handler(CallbackQueryHandler(cb_timer, pattern="^timer_(prev|next|toggle)$"))
     application.add_handler(CallbackQueryHandler(on_button, pattern="^(join|leave)$"))
+    application.add_handler(CallbackQueryHandler(cb_setask_day, pattern="^setask_day_"))
+    application.add_handler(CallbackQueryHandler(on_ask_button, pattern="^ask:"))
     application.add_handler(
         ChatMemberHandler(on_chat_member, ChatMemberHandler.ANY_CHAT_MEMBER)
     )
@@ -195,6 +222,17 @@ def main():
         scheduler.start()
         await scheduler.restore()
         await sync_all_chats(app.bot)
+        # Owner-only /room: visible only in the owner's private chat, nowhere else.
+        try:
+            oid = owner_id()
+            if oid:
+                from telegram import BotCommand, BotCommandScopeChat
+                await app.bot.set_my_commands(
+                    [BotCommand(command="room", description="Personal video room")],
+                    scope=BotCommandScopeChat(chat_id=oid),
+                )
+        except Exception as exc:
+            logger.warning("owner room menu sync failed: %s", exc)
 
     application.post_init = post_init
 

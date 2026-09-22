@@ -39,6 +39,13 @@ ADMIN_COMMANDS = [
     ("header", "Текст в шапке очереди / Queue header text"),
     ("tz", "Часовой пояс чата / Chat timezone"),
     ("all", "Тегнуть всех / Mention everyone"),
+    ("meet", "Открыть видео-комнату / Open a video room"),
+    ("endmeet", "Закрыть видео-комнату / Close the video room"),
+    ("setask", "Вопрос с ответами / Question with answers"),
+    ("asks", "Список вопросов / List questions"),
+    ("delask", "Удалить вопрос / Delete a question"),
+    ("askduration", "Сколько открыты ответы / Answer window minutes"),
+    ("askpost", "Опубликовать вопрос сейчас / Post a question now"),
 ]
 
 

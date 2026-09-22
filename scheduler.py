@@ -47,6 +47,10 @@ async def _timer_throttle(chat_id: int):
 OPEN_PREFIX, DELETE_PREFIX = "open", "delete"
 TIMER_PREFIX = "timer"
 TICK_PREFIX = "timertick"
+MEET_CLOSE_PREFIX = "meet_close"
+ASK_POST_PREFIX = "ask_post"
+ASK_CLOSE_PREFIX = "ask_close"
+REASON_EXPIRE_PREFIX = "ask_reason_expire"
 
 
 def _parse_time(hhmm):
@@ -404,6 +408,87 @@ class QueueScheduler:
         except Exception as exc:
             logger.debug("discard_queue_message: edit markup failed: %s", exc)
 
+    # --------------------------------------------------- meet jobs (Phase 1)
+
+    def schedule_meet_close(self, session_id, deadline_epoch):
+        """Date job that closes the meet session at join_deadline."""
+        run_date = datetime.fromtimestamp(deadline_epoch, tz=timezone.utc)
+        self.scheduler.add_job(
+            self.close_meet_session_job, "date", run_date=run_date,
+            args=[session_id],
+            id=f"{MEET_CLOSE_PREFIX}_{session_id}",
+            replace_existing=True, misfire_grace_time=3600,
+        )
+
+    async def close_meet_session_job(self, session_id):
+        from handlers.meet_handler import on_meet_close_job
+        await on_meet_close_job(self.bot, session_id)
+
+    # --------------------------------------------------- ask jobs
+
+    def schedule_ask(self, ask):
+        """Add/update the weekly cron post job for an ask (idempotent)."""
+        try:
+            h, m = _parse_time(ask["time"])
+            dow = DAY_INDEX[ask["weekday"]]
+        except (KeyError, ValueError, TypeError):
+            logger.warning("schedule_ask: bad weekday/time ask=%s", ask.get("id"))
+            return
+        trigger = CronTrigger(
+            day_of_week=dow, hour=h, minute=m, timezone=chat_tz(ask["chat_id"])
+        )
+        self.scheduler.add_job(
+            self.post_ask_job, trigger,
+            args=[ask["id"]],
+            id=f"{ASK_POST_PREFIX}_{ask['chat_id']}_{ask['id']}",
+            replace_existing=True, misfire_grace_time=300,
+        )
+
+    def unschedule_ask(self, chat_id, ask_id):
+        try:
+            self.scheduler.remove_job(f"{ASK_POST_PREFIX}_{chat_id}_{ask_id}")
+        except Exception:
+            pass
+
+    def schedule_ask_close(self, session_id, closes_at_epoch):
+        run_date = datetime.fromtimestamp(closes_at_epoch, tz=timezone.utc)
+        self.scheduler.add_job(
+            self.close_ask_job, "date", run_date=run_date,
+            args=[session_id],
+            id=f"{ASK_CLOSE_PREFIX}_{session_id}",
+            replace_existing=True, misfire_grace_time=3600,
+        )
+
+    def schedule_reason_expiry(self, chat_id, user_id, prompt_message_id):
+        from handlers.ask_handlers import ASK_REASON_TTL_SEC
+        run_date = datetime.now(timezone.utc) + timedelta(seconds=ASK_REASON_TTL_SEC)
+        self.scheduler.add_job(
+            self.expire_reason_job, "date", run_date=run_date,
+            args=[chat_id, user_id, prompt_message_id],
+            id=f"{REASON_EXPIRE_PREFIX}_{chat_id}_{user_id}",
+            replace_existing=True, misfire_grace_time=60,
+        )
+
+    def cancel_reason_expiry(self, chat_id, user_id):
+        try:
+            self.scheduler.remove_job(f"{REASON_EXPIRE_PREFIX}_{chat_id}_{user_id}")
+        except Exception:
+            pass
+
+    async def post_ask_job(self, ask_id):
+        from handlers.ask_handlers import post_ask_session
+        session = await post_ask_session(self.bot, ask_id)
+        if session:
+            self.schedule_ask_close(session["id"], session["closes_at"])
+
+    async def close_ask_job(self, session_id):
+        from handlers.ask_handlers import close_ask_session
+        await close_ask_session(self.bot, session_id)
+
+    async def expire_reason_job(self, chat_id, user_id, prompt_message_id):
+        from handlers.ask_handlers import expire_reason_prompt
+        await expire_reason_prompt(self.bot, chat_id, user_id, prompt_message_id)
+
     # ------------------------------------------------------------ restore
 
     def _occurrence(self, lesson, session_date):
@@ -501,3 +586,31 @@ class QueueScheduler:
 
         for lesson in db.get_all_lessons():
             await self.maybe_catchup_open(lesson)
+
+        # --- meet sessions: sweep expired, re-arm the rest (restart-safe) ---
+        import time as _time
+        from handlers.meet_handler import close_meet_session as _close_meet
+        for session in db.get_open_meet_sessions():
+            try:
+                if _time.time() >= float(session["join_deadline"]):
+                    await _close_meet(self.bot, session["id"], reason="restore-sweep")
+                else:
+                    self.schedule_meet_close(session["id"], float(session["join_deadline"]))
+            except Exception as exc:
+                logger.warning("restore: meet session %s failed: %s", session.get("id"), exc)
+
+        # --- asks: re-register crons, sweep expired answer windows ---
+        from handlers.ask_handlers import close_ask_session as _close_ask
+        for ask in db.get_all_asks():
+            try:
+                self.schedule_ask(ask)
+            except Exception as exc:
+                logger.warning("restore: schedule ask %s failed: %s", ask.get("id"), exc)
+        for session in db.get_open_ask_sessions():
+            try:
+                if _time.time() >= float(session.get("closes_at") or 0):
+                    await _close_ask(self.bot, session["id"])
+                else:
+                    self.schedule_ask_close(session["id"], float(session["closes_at"]))
+            except Exception as exc:
+                logger.warning("restore: ask session %s failed: %s", session.get("id"), exc)

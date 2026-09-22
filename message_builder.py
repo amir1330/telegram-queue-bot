@@ -270,6 +270,13 @@ def admin_commands(lang="en"):
             "/header - " + tr(lang, "admin_header"),
             "/tz - " + tr(lang, "admin_tz"),
             "/all - " + tr(lang, "admin_all"),
+            "/meet - " + tr(lang, "admin_meet"),
+            "/endmeet - " + tr(lang, "admin_endmeet"),
+            "/setask &lt;Day&gt; &lt;HH:MM&gt; | ... - " + tr(lang, "admin_setask"),
+            "/asks - " + tr(lang, "admin_asks"),
+            "/delask &lt;id&gt; - " + tr(lang, "admin_delask"),
+            "/askduration [id] &lt;min&gt; - " + tr(lang, "admin_askduration"),
+            "/askpost &lt;id&gt; - " + tr(lang, "admin_askpost"),
         ]
     )
 
@@ -302,3 +309,78 @@ def build_info_text(lessons, is_admin=False, lang="en", zone=None, zone_label=""
 
 def welcome_text(lang="en"):
     return tr(lang, "welcome_body")
+
+
+def setask_day_markup(lang="en"):
+    """Weekday picker for /setask (same layout as /setlesson, own callback)."""
+    keys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    rows = []
+    row = []
+    for key in keys:
+        row.append(
+            InlineKeyboardButton(
+                day_long(lang, key), callback_data=f"setask_day_{key}"
+            )
+        )
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(rows)
+
+
+def meet_message_markup(bot_username, session_id, lang="en"):
+    """Single deep-link button into the bot DM for this meet session."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    tr(lang, "meet_join_btn"),
+                    url=f"https://t.me/{bot_username}?start=m_{session_id}",
+                )
+            ]
+        ]
+    )
+
+
+def build_meet_text(lang="en"):
+    return tr(lang, "meet_posted")
+
+
+def ask_markup(session_id, options):
+    """One inline button per option: callback ask:<session>:<position>."""
+    rows = [
+        [InlineKeyboardButton(opt["label"], callback_data=f"ask:{session_id}:{opt['position']}")]
+        for opt in options
+    ]
+    return InlineKeyboardMarkup(rows) if rows else None
+
+
+def build_ask_text(question, options, responses, user_names, closed=False):
+    """Question + per-option tallies grouped with names (and reasons).
+
+    responses: ask_responses rows; user_names: {user_id: display name}.
+    All names/reasons HTML-escaped by the caller contract here.
+    """
+    lines = [html.escape(question), ""]
+    by_option: dict[int, list] = {opt["position"]: [] for opt in options}
+    for r in responses:
+        by_option.setdefault(r["option_id"], []).append(r)
+    for opt in options:
+        group = by_option.get(opt["position"], [])
+        head = f"{html.escape(opt['label'])} ({len(group)})"
+        if not group:
+            lines.append(head)
+            continue
+        parts = []
+        for r in group:
+            name = html.escape(user_names.get(r["user_id"], str(r["user_id"])))
+            if r.get("reason"):
+                parts.append(f"{name}: {html.escape(r['reason'])}")
+            else:
+                parts.append(name)
+        lines.append(f"{head}: " + ", ".join(parts))
+    if closed:
+        lines.append("")
+    return "\n".join(lines)

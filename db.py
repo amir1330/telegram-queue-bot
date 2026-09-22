@@ -101,6 +101,57 @@ CREATE TABLE IF NOT EXISTS active_timers (
     started_at TEXT,
     PRIMARY KEY (chat_id, lesson_id, session_date)
 );
+
+CREATE TABLE IF NOT EXISTS meet_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id INTEGER NOT NULL,
+    room TEXT NOT NULL,
+    created_by INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    join_deadline REAL NOT NULL,
+    state TEXT NOT NULL DEFAULT 'open',
+    message_id INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS asks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id INTEGER NOT NULL,
+    weekday TEXT NOT NULL,
+    time TEXT NOT NULL,
+    text TEXT NOT NULL,
+    duration_min INTEGER NOT NULL DEFAULT 360,
+    enabled INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS ask_options (
+    ask_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    needs_reason INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (ask_id, position),
+    FOREIGN KEY (ask_id) REFERENCES asks (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ask_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ask_id INTEGER NOT NULL,
+    chat_id INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    message_id INTEGER,
+    state TEXT NOT NULL DEFAULT 'open',
+    closes_at REAL NOT NULL DEFAULT 0,
+    FOREIGN KEY (ask_id) REFERENCES asks (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ask_responses (
+    session_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    option_id INTEGER NOT NULL,
+    reason TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (session_id, user_id),
+    FOREIGN KEY (session_id) REFERENCES ask_sessions (id) ON DELETE CASCADE
+);
 """
 
 
@@ -813,3 +864,247 @@ def purge_expired_param_pending(older_than):
             (older_than,),
         )
         conn.commit()
+
+
+# -------------------------------------------------------- meet sessions
+
+MEET_JOIN_WINDOW_SEC = 300  # 5 minutes: new joins allowed after /meet
+
+
+def create_meet_session(chat_id, room, created_by, join_deadline, message_id=None):
+    """Insert an open meet session. Returns the session row."""
+    with _LOCK:
+        conn = _connect()
+        cur = conn.execute(
+            "INSERT INTO meet_sessions "
+            "(chat_id, room, created_by, created_at, join_deadline, state, message_id) "
+            "VALUES (?, ?, ?, ?, ?, 'open', ?)",
+            (chat_id, room, created_by, _now(), join_deadline, message_id),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM meet_sessions WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+        return dict(row)
+
+
+def get_meet_session(session_id):
+    with _LOCK:
+        row = _connect().execute(
+            "SELECT * FROM meet_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_blocking_meet_session(chat_id):
+    """The open/active session blocking a new /meet in this chat, or None."""
+    with _LOCK:
+        row = _connect().execute(
+            "SELECT * FROM meet_sessions WHERE chat_id = ? AND state IN ('open', 'active') "
+            "ORDER BY id DESC LIMIT 1",
+            (chat_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_open_meet_sessions():
+    """All sessions still blocking /meet (for startup restore)."""
+    with _LOCK:
+        rows = _connect().execute(
+            "SELECT * FROM meet_sessions WHERE state IN ('open', 'active') ORDER BY id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def set_meet_session_message(session_id, message_id):
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "UPDATE meet_sessions SET message_id = ? WHERE id = ?",
+            (message_id, session_id),
+        )
+        conn.commit()
+
+
+def set_meet_session_state(session_id, state):
+    """Set state to open/active/closed. Returns the updated row or None."""
+    with _LOCK:
+        conn = _connect()
+        conn.execute("UPDATE meet_sessions SET state = ? WHERE id = ?", (state, session_id))
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM meet_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+# ------------------------------------------------------------------ asks
+
+ASK_DEFAULT_DURATION_MIN = 360
+
+
+def create_ask(chat_id, weekday, time_text, text, duration_min=ASK_DEFAULT_DURATION_MIN):
+    """Insert an ask config. Returns the ask row."""
+    with _LOCK:
+        conn = _connect()
+        cur = conn.execute(
+            "INSERT INTO asks (chat_id, weekday, time, text, duration_min, enabled) "
+            "VALUES (?, ?, ?, ?, ?, 1)",
+            (chat_id, weekday, time_text, text, duration_min),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM asks WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+
+def get_ask(ask_id):
+    with _LOCK:
+        row = _connect().execute("SELECT * FROM asks WHERE id = ?", (ask_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_asks(chat_id):
+    with _LOCK:
+        rows = _connect().execute(
+            "SELECT * FROM asks WHERE chat_id = ? ORDER BY id", (chat_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_all_asks():
+    with _LOCK:
+        rows = _connect().execute("SELECT * FROM asks ORDER BY chat_id, id").fetchall()
+        return [dict(r) for r in rows]
+
+
+def delete_ask(chat_id, ask_id):
+    """Delete an ask of this chat (options/sessions/responses cascade). Returns True."""
+    with _LOCK:
+        conn = _connect()
+        cur = conn.execute("DELETE FROM asks WHERE id = ? AND chat_id = ?", (ask_id, chat_id))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def set_ask_duration(chat_id, ask_id, duration_min):
+    """Set answer window minutes. Returns updated row or None."""
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "UPDATE asks SET duration_min = ? WHERE id = ? AND chat_id = ?",
+            (duration_min, ask_id, chat_id),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM asks WHERE id = ?", (ask_id,)).fetchone()
+        return dict(row) if row and row["chat_id"] == chat_id else None
+
+
+def set_ask_options(ask_id, options):
+    """Replace options: list of (label, needs_reason)."""
+    with _LOCK:
+        conn = _connect()
+        conn.execute("DELETE FROM ask_options WHERE ask_id = ?", (ask_id,))
+        for pos, (label, needs_reason) in enumerate(options):
+            conn.execute(
+                "INSERT INTO ask_options (ask_id, position, label, needs_reason) "
+                "VALUES (?, ?, ?, ?)",
+                (ask_id, pos, label, 1 if needs_reason else 0),
+            )
+        conn.commit()
+
+
+def get_ask_options(ask_id):
+    with _LOCK:
+        rows = _connect().execute(
+            "SELECT * FROM ask_options WHERE ask_id = ? ORDER BY position", (ask_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_ask_session(ask_id, chat_id, date_text, closes_at, message_id=None):
+    with _LOCK:
+        conn = _connect()
+        cur = conn.execute(
+            "INSERT INTO ask_sessions (ask_id, chat_id, date, message_id, state, closes_at) "
+            "VALUES (?, ?, ?, ?, 'open', ?)",
+            (ask_id, chat_id, date_text, message_id, closes_at),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM ask_sessions WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+        return dict(row)
+
+
+def get_ask_session(session_id):
+    with _LOCK:
+        row = _connect().execute(
+            "SELECT * FROM ask_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_open_ask_sessions():
+    with _LOCK:
+        rows = _connect().execute(
+            "SELECT * FROM ask_sessions WHERE state = 'open' ORDER BY id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def set_ask_session_message(session_id, message_id):
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "UPDATE ask_sessions SET message_id = ? WHERE id = ?", (message_id, session_id)
+        )
+        conn.commit()
+
+
+def set_ask_session_state(session_id, state):
+    with _LOCK:
+        conn = _connect()
+        conn.execute("UPDATE ask_sessions SET state = ? WHERE id = ?", (state, session_id))
+        conn.commit()
+
+
+def save_ask_response(session_id, user_id, option_id, reason=None):
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "INSERT INTO ask_responses (session_id, user_id, option_id, reason, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(session_id, user_id) DO UPDATE SET "
+            "option_id = excluded.option_id, reason = excluded.reason, "
+            "updated_at = excluded.updated_at",
+            (session_id, user_id, option_id, reason, _now()),
+        )
+        conn.commit()
+
+
+def delete_ask_response(session_id, user_id):
+    with _LOCK:
+        conn = _connect()
+        conn.execute(
+            "DELETE FROM ask_responses WHERE session_id = ? AND user_id = ?",
+            (session_id, user_id),
+        )
+        conn.commit()
+
+
+def get_ask_response(session_id, user_id):
+    with _LOCK:
+        row = _connect().execute(
+            "SELECT * FROM ask_responses WHERE session_id = ? AND user_id = ?",
+            (session_id, user_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_ask_responses(session_id):
+    with _LOCK:
+        rows = _connect().execute(
+            "SELECT * FROM ask_responses WHERE session_id = ? ORDER BY updated_at",
+            (session_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]

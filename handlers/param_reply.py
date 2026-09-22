@@ -37,7 +37,8 @@ from i18n import tr
 logger = logging.getLogger(__name__)
 
 _ADMIN_COMMANDS = frozenset(
-    {"setlesson", "setlesson_time", "before", "duration", "delete", "header", "timer"}
+    {"setlesson", "setlesson_time", "before", "duration", "delete", "header", "timer",
+     "setask_time", "setask_question", "setask_options"}
 )
 
 _APPLY = {
@@ -78,6 +79,10 @@ def _looks_like_answer(command: str, text: str) -> bool:
     if command == "setlesson":
         parts = text.split()
         return len(parts) >= 2 and bool(_TIME_RE.match(parts[-1]))
+    if command in ("setask_time",):
+        return bool(_TIME_RE.match(text))
+    if command in ("setask_question", "setask_options", "ask_reason"):
+        return 0 < len(text) <= 1000
     return len(text) <= 80
 
 
@@ -132,7 +137,28 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     ui_message_id = None
-    if command == "setlesson_time":
+    if command == "ask_reason":
+        # Anyone in the group can answer; no admin check. Full text = reason.
+        from handlers.ask_handlers import apply_ask_reason
+        ok = await apply_ask_reason(update, context)
+        if not ok:
+            return
+        prompt_message_id = pending["prompt_message_id"]
+        clear_pending(chat.id, user.id)
+        await delete_prompt_best_effort(context.bot, chat.id, prompt_message_id)
+        if ui_message_id:
+            schedule_delete(context.bot, chat.id, ui_message_id, seconds=0)
+        return
+    if command == "setask_time":
+        from handlers.ask_handlers import apply_setask_time
+        ok = await apply_setask_time(update, context, args, pending.get("payload"))
+    elif command == "setask_question":
+        from handlers.ask_handlers import apply_setask_question
+        ok = await apply_setask_question(update, context, args, pending.get("payload"))
+    elif command == "setask_options":
+        from handlers.ask_handlers import apply_setask_options
+        ok = await apply_setask_options(update, context, args, pending.get("payload"))
+    elif command == "setlesson_time":
         day, ui_message_id = parse_setlesson_payload(pending.get("payload"))
         if not day:
             clear_pending(chat.id, user.id)

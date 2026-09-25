@@ -61,6 +61,10 @@ def _looks_like_answer(command: str, text: str) -> bool:
     if command == "header":
         # Mentions / code fences / multi-line notes while pending.
         return len(text) <= 2000
+    if command in ("setask_question", "setask_options", "ask_reason"):
+        # Free text by design: multi-line questions, one-per-line options,
+        # multi-line reasons. Length caps enforced by the apply step.
+        return 0 < len(text) <= 1000
     if "\n" in text:
         return False
     if command == "setlesson_time":
@@ -81,8 +85,6 @@ def _looks_like_answer(command: str, text: str) -> bool:
         return len(parts) >= 2 and bool(_TIME_RE.match(parts[-1]))
     if command in ("setask_time",):
         return bool(_TIME_RE.match(text))
-    if command in ("setask_question", "setask_options", "ask_reason"):
-        return 0 < len(text) <= 1000
     return len(text) <= 80
 
 
@@ -101,6 +103,11 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command = pending["command"]
     text = message.text
     replied = message.reply_to_message
+
+    if command == "setask_confirm":
+        # Terminal wizard step advances via Save/Cancel buttons only, so the
+        # flow never depends on Group Privacy. Ignore stray typed text.
+        return
 
     # Some clients attach ForceReply to the wrong parent (e.g. the user's
     # original /setname instead of the bot prompt). Accept either an exact
@@ -189,8 +196,28 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok:
         return
 
+    # Chained wizards (e.g. setask time -> question) start a NEW prompt inside
+    # apply, overwriting pending. Only clear when pending is unchanged;
+    # otherwise delete just the old prompt and keep the new one.
     prompt_message_id = pending["prompt_message_id"]
-    clear_pending(chat.id, user.id)
+    fresh = get_pending(chat.id, user.id)
+    chained = (
+        fresh is not None
+        and (
+            fresh.get("command") != command
+            or int(fresh.get("prompt_message_id") or 0) != int(prompt_message_id or 0)
+        )
+    )
+    if not chained:
+        clear_pending(chat.id, user.id)
     await delete_prompt_best_effort(context.bot, chat.id, prompt_message_id)
     if ui_message_id:
         schedule_delete(context.bot, chat.id, ui_message_id, seconds=0)
+    if command in ("setask_time", "setask_question", "setask_options"):
+        # Wizard hygiene: remove the admin's answer, keep only bot prompts.
+        try:
+            await context.bot.delete_message(
+                chat_id=chat.id, message_id=message.message_id
+            )
+        except Exception as exc:
+            logger.debug("wizard: delete admin reply failed: %s", exc)

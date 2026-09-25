@@ -18,6 +18,7 @@ from telegram.ext import (
 import db
 from command_menu import sync_all_chats, sync_commands_for_chat
 from handlers.ask_handlers import (
+    cb_ask_confirm,
     cb_setask_day,
     cmd_askduration,
     cmd_askpost,
@@ -212,6 +213,7 @@ def main():
     application.add_handler(CallbackQueryHandler(cb_timer, pattern="^timer_(prev|next|toggle)$"))
     application.add_handler(CallbackQueryHandler(on_button, pattern="^(join|leave)$"))
     application.add_handler(CallbackQueryHandler(cb_setask_day, pattern="^setask_day_"))
+    application.add_handler(CallbackQueryHandler(cb_ask_confirm, pattern="^ask_(save|cancel)$"))
     application.add_handler(CallbackQueryHandler(on_ask_button, pattern="^ask:"))
     application.add_handler(
         ChatMemberHandler(on_chat_member, ChatMemberHandler.ANY_CHAT_MEMBER)

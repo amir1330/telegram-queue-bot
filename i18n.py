@@ -184,6 +184,22 @@ STRINGS = {
         "ask_reason_needed": "Please send your reason as a reply first.",
         "ask_reason_too_long": "Reason too long (max 200 characters).",
         "ask_retracted": "Answer retracted.",
+        # setask wizard (reply-based, works with Group Privacy on)
+        "btn_save": "Save",
+        "btn_cancel": "Cancel",
+        "setask_r_time": "Reply to this message with the time, e.g. 18:00.",
+        "setask_r_question": "Reply to this message with the question text.",
+        "setask_r_options": "Reply to this message with answer options, one per line. Prefix a line with ? if it should require a reason.\nExample:\nYes\nNo\n?I have a reason",
+        "setask_confirm": "Save this question?\n{day} {time}\n\n{question}\n{options}",
+        "setask_confirm_opt": "\n- {label}{reason}",
+        "setask_confirm_reason": " (needs a reason)",
+        "setask_cancelled": "Cancelled, nothing saved.",
+        # nicer poll render
+        "ask_open_until": "⏳ Open until {time}",
+        "ask_closed_line": "🔒 Closed",
+        "ask_total": "Total answered: {n}",
+        "ask_no_answers": "—",
+        "ask_more": "+{n} more",
     },
     "ru": {
         # queue message
@@ -351,5 +367,21 @@ STRINGS = {
         "ask_reason_needed": "Сначала отправь причину ответом.",
         "ask_reason_too_long": "Слишком длинная причина (макс. 200 символов).",
         "ask_retracted": "Ответ убран.",
+        # setask wizard (reply-based, works with Group Privacy on)
+        "btn_save": "Сохранить",
+        "btn_cancel": "Отмена",
+        "setask_r_time": "Ответь на это сообщение временем, например 18:00.",
+        "setask_r_question": "Ответь на это сообщение текстом вопроса.",
+        "setask_r_options": "Ответь на это сообщение вариантами, по одному на строку. ? в начале — вариант требует причину.\nПример:\nДа\nНет\n?Есть причина",
+        "setask_confirm": "Сохранить вопрос?\n{day} {time}\n\n{question}\n{options}",
+        "setask_confirm_opt": "\n- {label}{reason}",
+        "setask_confirm_reason": " (нужна причина)",
+        "setask_cancelled": "Отменено, ничего не сохранено.",
+        # nicer poll render
+        "ask_open_until": "⏳ Открыто до {time}",
+        "ask_closed_line": "🔒 Закрыто",
+        "ask_total": "Всего ответили: {n}",
+        "ask_no_answers": "—",
+        "ask_more": "+{n} ещё",
     },
 }

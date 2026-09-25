@@ -62,7 +62,9 @@ async def refresh_ask_message(bot: Bot, session_id, lang="en"):
     for row in db.get_known_users(session["chat_id"]):
         user_names[row["user_id"]] = row["display_name"]
     closed = session.get("state") == "closed"
-    text = build_ask_text(ask["text"], options, responses, user_names, closed=closed)
+    text = build_ask_text(ask["text"], options, responses, user_names, closed=closed,
+                          closes_at=session.get("closes_at"), chat_id=session["chat_id"],
+                          lang=lang)
     markup = None if closed else ask_markup(session_id, options)
 
     lock = _lock(session_id)

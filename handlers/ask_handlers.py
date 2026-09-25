@@ -83,6 +83,10 @@ async def _save_ask_and_schedule(update, context, day, tm, question, options):
     lang = db.get_chat_lang(chat.id)
     ask = db.create_ask(chat.id, day, tm, question)
     db.set_ask_options(ask["id"], options)
+    logger.info(
+        "setask saved chat=%s ask=%s day=%s time=%s options=%d",
+        chat.id, ask["id"], day, tm, len(options),
+    )
     scheduler = context.bot_data.get("scheduler")
     if scheduler:
         scheduler.schedule_ask(db.get_ask(ask["id"]))
@@ -141,7 +145,7 @@ async def cb_setask_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
     payload = json.dumps({"day": day, "ui_message_id": query.message.message_id})
     await start_param_prompt(
-        update, context, "setask_time", tr(lang, "prompt_setask_time"), payload=payload
+        update, context, "setask_time", tr(lang, "setask_r_time"), payload=payload
     )
 
 
@@ -170,7 +174,7 @@ async def apply_setask_time(update, context, args, payload_raw=None) -> bool:
         {"day": day, "time": tm, "ui_message_id": data.get("ui_message_id")}
     )
     await start_param_prompt(
-        update, context, "setask_question", tr(lang, "prompt_setask_question"),
+        update, context, "setask_question", tr(lang, "setask_r_question"),
         payload=payload,
     )
     return True
@@ -197,14 +201,22 @@ async def apply_setask_question(update, context, args, payload_raw=None) -> bool
         }
     )
     await start_param_prompt(
-        update, context, "setask_options", tr(lang, "prompt_setask_options"),
+        update, context, "setask_options", tr(lang, "setask_r_options"),
         payload=payload,
     )
     return True
 
 
 async def apply_setask_options(update, context, args, payload_raw=None) -> bool:
-    """Wizard step 4: options given -> save the ask."""
+    """Wizard step 4: options given (one per line, ? = needs reason).
+
+    Does NOT save yet: posts a Save/Cancel confirmation (inline buttons work
+    with Group Privacy on) and stashes the draft in pending.
+    """
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    from handlers.param_prompt import set_pending
+
     chat = update.effective_chat
     message = update.effective_message
     lang = db.get_chat_lang(chat.id)
@@ -212,13 +224,95 @@ async def apply_setask_options(update, context, args, payload_raw=None) -> bool:
     if data.get("day") not in DAYS_EN or not data.get("question"):
         await reply_ephemeral(update, context, tr(lang, "invalid_input"))
         return False
-    options = parse_ask_options(message.text or "")
+    options = parse_ask_options((message.text or "").replace("\n", "|"))
     if len(options) < 2:
         await reply_ephemeral(update, context, tr(lang, "usage_setask"))
         return False
-    return await _save_ask_and_schedule(
-        update, context, data["day"], data["time"], data["question"], options
+    opt_lines = "".join(
+        tr(
+            lang, "setask_confirm_opt", label=label,
+            reason=tr(lang, "setask_confirm_reason") if needs_reason else "",
+        )
+        for label, needs_reason in options
     )
+    msg = await message.reply_text(
+        tr(
+            lang, "setask_confirm", day=day_long(lang, data["day"]),
+            time=data["time"], question=data["question"], options=opt_lines,
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(tr(lang, "btn_save"), callback_data="ask_save"),
+                    InlineKeyboardButton(tr(lang, "btn_cancel"), callback_data="ask_cancel"),
+                ]
+            ]
+        ),
+    )
+    draft = {
+        "day": data["day"], "time": data["time"], "question": data["question"],
+        "options": [[label, needs_reason] for label, needs_reason in options],
+        "confirm_message_id": msg.message_id,
+        "ui_message_id": data.get("ui_message_id"),
+    }
+    set_pending(chat.id, update.effective_user.id, "setask_confirm", msg.message_id,
+                payload=json.dumps(draft))
+    logger.info(
+        "setask confirm posted chat=%s user=%s day=%s time=%s options=%d",
+        chat.id, update.effective_user.id, data["day"], data["time"], len(options),
+    )
+    return True
+
+
+async def cb_ask_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Save or discard the stashed setask draft (buttons = privacy-proof)."""
+    from handlers.param_prompt import clear_pending, get_pending
+
+    query = update.callback_query
+    chat = query.message.chat if query.message else None
+    user = query.from_user
+    if not chat or not user:
+        await query.answer()
+        return
+    lang = db.get_chat_lang(chat.id)
+    if not await is_admin(update, chat.id, user.id):
+        await query.answer(text=tr(lang, "toast_admins_only"), show_alert=True)
+        return
+    action = (query.data or "").removeprefix("ask_")
+    pending = get_pending(chat.id, user.id)
+    data = _wizard_payload((pending or {}).get("payload"))
+    if not pending or pending.get("command") != "setask_confirm" or not data.get("question"):
+        await query.answer()
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return
+    await query.answer()
+    if action == "cancel":
+        clear_pending(chat.id, user.id)
+        try:
+            await query.edit_message_text(tr(lang, "setask_cancelled"))
+        except Exception:
+            pass
+        schedule_delete(context.bot, chat.id, query.message.message_id)
+        if data.get("ui_message_id"):
+            schedule_delete(context.bot, chat.id, data["ui_message_id"], seconds=0)
+        return
+    options = [(label, bool(nr)) for label, nr in data["options"]]
+    ok = await _save_ask_and_schedule(update, context, data["day"], data["time"],
+                                      data["question"], options)
+    if ok:
+        clear_pending(chat.id, user.id)
+        try:
+            await query.message.delete()
+        except Exception:
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+        if data.get("ui_message_id"):
+            schedule_delete(context.bot, chat.id, data["ui_message_id"], seconds=0)
 
 
 async def cmd_asks(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -326,7 +420,9 @@ async def post_ask_session(bot, ask_id, date_text=None):
     closes_at = time.time() + int(ask["duration_min"]) * 60
     session = db.create_ask_session(ask_id, ask["chat_id"], date_text, closes_at)
     lang = db.get_chat_lang(ask["chat_id"])
-    text = build_ask_text(ask["text"], options, [], {}, closed=False)
+    text = build_ask_text(ask["text"], options, [], {}, closed=False,
+                          closes_at=session["closes_at"], chat_id=ask["chat_id"],
+                          lang=lang)
     try:
         msg = await bot.send_message(
             chat_id=ask["chat_id"], text=text, parse_mode="HTML",

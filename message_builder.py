@@ -357,30 +357,69 @@ def ask_markup(session_id, options):
     return InlineKeyboardMarkup(rows) if rows else None
 
 
-def build_ask_text(question, options, responses, user_names, closed=False):
-    """Question + per-option tallies grouped with names (and reasons).
+def _ask_emoji(option):
+    if option.get("needs_reason"):
+        return "💭"
+    if option.get("position") == 0:
+        return "✅"
+    if option.get("position") == 1:
+        return "❌"
+    return "🔹"
 
-    responses: ask_responses rows; user_names: {user_id: display name}.
-    All names/reasons HTML-escaped by the caller contract here.
+
+def _ask_close_line(closes_at, chat_id, lang):
+    """'Open until HH:MM' in the chat timezone (None when unknown)."""
+    if not closes_at or not chat_id:
+        return None
+    try:
+        from timezone import chat_tz
+        tz = chat_tz(chat_id)
+        if tz is None:
+            return None
+        from datetime import datetime
+        hm = datetime.fromtimestamp(float(closes_at), tz=tz).strftime("%H:%M")
+        return tr(lang, "ask_open_until", time=hm)
+    except Exception:
+        return None
+
+
+def build_ask_text(question, options, responses, user_names, closed=False,
+                   closes_at=None, chat_id=None, lang="en", max_names=10):
+    """Structured poll card: question, open/closed line, per-option tallies.
+
+    Zero-response options stay visible with '— 0'. Names truncate with
+    '+N more' past max_names so long lists don't explode the message.
+    Everything user-supplied is HTML-escaped.
     """
-    lines = [html.escape(question), ""]
+    lines = [f"📋 <b>{html.escape(question)}</b>"]
+    if closed:
+        lines.append(tr(lang, "ask_closed_line"))
+    else:
+        close_line = _ask_close_line(closes_at, chat_id, lang)
+        if close_line:
+            lines.append(close_line)
+    lines.append("")
     by_option: dict[int, list] = {opt["position"]: [] for opt in options}
     for r in responses:
         by_option.setdefault(r["option_id"], []).append(r)
     for opt in options:
         group = by_option.get(opt["position"], [])
-        head = f"{html.escape(opt['label'])} ({len(group)})"
+        lines.append(f"{_ask_emoji(opt)} <b>{html.escape(opt['label'])}</b> — {len(group)}")
         if not group:
-            lines.append(head)
-            continue
-        parts = []
-        for r in group:
-            name = html.escape(user_names.get(r["user_id"], str(r["user_id"])))
-            if r.get("reason"):
-                parts.append(f"{name}: {html.escape(r['reason'])}")
-            else:
-                parts.append(name)
-        lines.append(f"{head}: " + ", ".join(parts))
-    if closed:
+            lines.append(tr(lang, "ask_no_answers"))
+        else:
+            parts = []
+            for r in group:
+                name = html.escape(user_names.get(r["user_id"], str(r["user_id"])))
+                if r.get("reason"):
+                    parts.append(f"{name} — <i>{html.escape(r['reason'])}</i>")
+                else:
+                    parts.append(name)
+            shown = parts[:max_names]
+            if len(parts) > max_names:
+                shown.append(tr(lang, "ask_more", n=len(parts) - max_names))
+            lines.append(", ".join(shown))
         lines.append("")
+    lines.append("➖" * 10)
+    lines.append(tr(lang, "ask_total", n=len(responses)))
     return "\n".join(lines)

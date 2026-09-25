@@ -116,11 +116,13 @@ CREATE TABLE IF NOT EXISTS meet_sessions (
 CREATE TABLE IF NOT EXISTS asks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_id INTEGER NOT NULL,
+    num INTEGER NOT NULL DEFAULT 0,
     weekday TEXT NOT NULL,
     time TEXT NOT NULL,
     text TEXT NOT NULL,
     duration_min INTEGER NOT NULL DEFAULT 360,
-    enabled INTEGER NOT NULL DEFAULT 1
+    enabled INTEGER NOT NULL DEFAULT 1,
+    UNIQUE (chat_id, num)
 );
 
 CREATE TABLE IF NOT EXISTS ask_options (
@@ -192,6 +194,28 @@ def _migrate(conn):
     lesson_cols = {
         r["name"] for r in conn.execute("PRAGMA table_info(lessons)").fetchall()
     }
+    try:
+        ask_cols = {r["name"] for r in conn.execute("PRAGMA table_info(asks)").fetchall()}
+    except Exception:
+        ask_cols = set()
+    if ask_cols and "num" not in ask_cols:
+        conn.execute("ALTER TABLE asks ADD COLUMN num INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        for (chat_id,) in conn.execute("SELECT DISTINCT chat_id FROM asks").fetchall():
+            n = 0
+            for (aid,) in conn.execute(
+                "SELECT id FROM asks WHERE chat_id = ? ORDER BY id", (chat_id,)
+            ).fetchall():
+                n += 1
+                conn.execute("UPDATE asks SET num = ? WHERE id = ?", (n, aid))
+        conn.commit()
+    try:
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_asks_chat_num ON asks (chat_id, num)"
+        )
+        conn.commit()
+    except Exception:
+        pass
     if lesson_cols and "header_text" not in lesson_cols:
         conn.execute("ALTER TABLE lessons ADD COLUMN header_text TEXT")
         conn.commit()
@@ -944,13 +968,21 @@ ASK_DEFAULT_DURATION_MIN = 360
 
 
 def create_ask(chat_id, weekday, time_text, text, duration_min=ASK_DEFAULT_DURATION_MIN):
-    """Insert an ask config. Returns the ask row."""
+    """Insert an ask config. Returns the ask row.
+
+    The user-facing number (num) counts per chat: 1, 2, 3... in creation
+    order, never reused after delete, so /asks numbers stay stable.
+    """
     with _LOCK:
         conn = _connect()
+        row = conn.execute(
+            "SELECT COALESCE(MAX(num), 0) AS m FROM asks WHERE chat_id = ?", (chat_id,)
+        ).fetchone()
+        num = (row["m"] or 0) + 1
         cur = conn.execute(
-            "INSERT INTO asks (chat_id, weekday, time, text, duration_min, enabled) "
-            "VALUES (?, ?, ?, ?, ?, 1)",
-            (chat_id, weekday, time_text, text, duration_min),
+            "INSERT INTO asks (chat_id, num, weekday, time, text, duration_min, enabled) "
+            "VALUES (?, ?, ?, ?, ?, ?, 1)",
+            (chat_id, num, weekday, time_text, text, duration_min),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM asks WHERE id = ?", (cur.lastrowid,)).fetchone()
@@ -960,6 +992,15 @@ def create_ask(chat_id, weekday, time_text, text, duration_min=ASK_DEFAULT_DURAT
 def get_ask(ask_id):
     with _LOCK:
         row = _connect().execute("SELECT * FROM asks WHERE id = ?", (ask_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_ask_by_number(chat_id, num):
+    """User-facing lookup: the chat's own Nth question."""
+    with _LOCK:
+        row = _connect().execute(
+            "SELECT * FROM asks WHERE chat_id = ? AND num = ?", (chat_id, num)
+        ).fetchone()
         return dict(row) if row else None
 
 

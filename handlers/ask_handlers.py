@@ -92,7 +92,7 @@ async def _save_ask_and_schedule(update, context, day, tm, question, options):
         scheduler.schedule_ask(db.get_ask(ask["id"]))
     await reply_ephemeral(
         update, context,
-        tr(lang, "setask_saved", id=ask["id"], day=day_long(lang, day), time=tm),
+        tr(lang, "setask_saved", id=ask["num"], day=day_long(lang, day), time=tm),
     )
     return True
 
@@ -330,7 +330,7 @@ async def cmd_asks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lines = [
         tr(
-            lang, "setask_list_line", id=a["id"],
+            lang, "setask_list_line", id=a["num"],
             day=day_long(lang, a["weekday"]), time=a["time"],
             dur=a["duration_min"], text=a["text"][:80],
         )
@@ -352,16 +352,17 @@ async def cmd_delask(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(args) != 1 or not args[0].isdigit():
         await reply_ephemeral(update, context, tr(lang, "usage_delask"))
         return
-    ask_id = int(args[0])
-    ask = db.get_ask(ask_id)
-    if not ask or ask["chat_id"] != chat.id:
-        await reply_ephemeral(update, context, tr(lang, "setask_no_id", id=ask_id))
+    num = int(args[0])
+    ask = db.get_ask_by_number(chat.id, num)
+    if not ask:
+        await reply_ephemeral(update, context, tr(lang, "setask_no_id", id=num))
         return
+    ask_id = ask["id"]
     scheduler = context.bot_data.get("scheduler")
     if scheduler:
         scheduler.unschedule_ask(chat.id, ask_id)
     db.delete_ask(chat.id, ask_id)
-    await reply_ephemeral(update, context, tr(lang, "setask_deleted", id=ask_id))
+    await reply_ephemeral(update, context, tr(lang, "setask_deleted", id=num))
 
 
 async def _resolve_ask_duration_target(chat_id, args):
@@ -372,8 +373,8 @@ async def _resolve_ask_duration_target(chat_id, args):
             return None, "usage_askduration"
         return asks[0], int(args[0])
     if len(args) == 2 and args[0].isdigit() and args[1].isdigit():
-        ask = db.get_ask(int(args[0]))
-        if not ask or ask["chat_id"] != chat_id:
+        ask = db.get_ask_by_number(chat_id, int(args[0]))
+        if not ask:
             return None, "setask_no_id"
         return ask, int(args[1])
     return None, "usage_askduration"
@@ -403,7 +404,7 @@ async def cmd_askduration(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     db.set_ask_duration(chat.id, ask["id"], minutes)
     await reply_ephemeral(
-        update, context, tr(lang, "askduration_set", id=ask["id"], value=minutes)
+        update, context, tr(lang, "askduration_set", id=ask["num"], value=minutes)
     )
 
 
@@ -450,8 +451,8 @@ async def cmd_askpost(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(args) != 1 or not args[0].isdigit():
         await reply_ephemeral(update, context, tr(lang, "usage_askpost"))
         return
-    ask = db.get_ask(int(args[0]))
-    if not ask or ask["chat_id"] != chat.id:
+    ask = db.get_ask_by_number(chat.id, int(args[0]))
+    if not ask:
         await reply_ephemeral(update, context, tr(lang, "setask_no_id", id=args[0]))
         return
     session = await post_ask_session(context.bot, ask["id"])
@@ -459,7 +460,7 @@ async def cmd_askpost(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if scheduler and session:
         scheduler.schedule_ask_close(session["id"], session["closes_at"])
     await reply_ephemeral(update, context, tr(lang, "setask_saved",
-                                              id=ask["id"],
+                                              id=ask["num"],
                                               day=day_long(lang, ask["weekday"]),
                                               time=ask["time"]),
                           delete_trigger=True)

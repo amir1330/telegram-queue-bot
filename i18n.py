@@ -195,8 +195,8 @@ STRINGS = {
         "setask_confirm_reason": " (needs a reason)",
         "setask_cancelled": "Cancelled, nothing saved.",
         # nicer poll render
-        "ask_open_until": "⏳ Open until {time}",
-        "ask_closed_line": "🔒 Closed",
+        "ask_open_until": "Open until {time}",
+        "ask_closed_line": "Closed",
         "ask_total": "Total answered: {n}",
         "ask_no_answers": "—",
         "ask_more": "+{n} more",
@@ -378,8 +378,8 @@ STRINGS = {
         "setask_confirm_reason": " (нужна причина)",
         "setask_cancelled": "Отменено, ничего не сохранено.",
         # nicer poll render
-        "ask_open_until": "⏳ Открыто до {time}",
-        "ask_closed_line": "🔒 Закрыто",
+        "ask_open_until": "Открыто до {time}",
+        "ask_closed_line": "Закрыто",
         "ask_total": "Всего ответили: {n}",
         "ask_no_answers": "—",
         "ask_more": "+{n} ещё",

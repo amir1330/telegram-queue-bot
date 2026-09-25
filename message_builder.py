@@ -357,16 +357,6 @@ def ask_markup(session_id, options):
     return InlineKeyboardMarkup(rows) if rows else None
 
 
-def _ask_emoji(option):
-    if option.get("needs_reason"):
-        return "💭"
-    if option.get("position") == 0:
-        return "✅"
-    if option.get("position") == 1:
-        return "❌"
-    return "🔹"
-
-
 def _ask_close_line(closes_at, chat_id, lang):
     """'Open until HH:MM' in the chat timezone (None when unknown)."""
     if not closes_at or not chat_id:
@@ -391,7 +381,7 @@ def build_ask_text(question, options, responses, user_names, closed=False,
     '+N more' past max_names so long lists don't explode the message.
     Everything user-supplied is HTML-escaped.
     """
-    lines = [f"📋 <b>{html.escape(question)}</b>"]
+    lines = [f"<b>{html.escape(question)}</b>"]
     if closed:
         lines.append(tr(lang, "ask_closed_line"))
     else:
@@ -404,7 +394,7 @@ def build_ask_text(question, options, responses, user_names, closed=False,
         by_option.setdefault(r["option_id"], []).append(r)
     for opt in options:
         group = by_option.get(opt["position"], [])
-        lines.append(f"{_ask_emoji(opt)} <b>{html.escape(opt['label'])}</b> — {len(group)}")
+        lines.append(f"<b>{html.escape(opt['label'])}</b> — {len(group)}")
         if not group:
             lines.append(tr(lang, "ask_no_answers"))
         else:
@@ -420,6 +410,6 @@ def build_ask_text(question, options, responses, user_names, closed=False,
                 shown.append(tr(lang, "ask_more", n=len(parts) - max_names))
             lines.append(", ".join(shown))
         lines.append("")
-    lines.append("➖" * 10)
+    lines.append("-" * 12)
     lines.append(tr(lang, "ask_total", n=len(responses)))
     return "\n".join(lines)

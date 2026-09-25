@@ -277,7 +277,7 @@ async def main():
     check("zero-total option steady", "Нет</b> — 0" in card and "—\n" in card)
     check("open-until line", "Открыто до" in card)
     closed_card = build_ask_text("Q?", opts, resp[:1], names, closed=True, lang="en")
-    check("closed line + no buttons text", "🔒 Closed" in closed_card and "Total answered: 1" in closed_card)
+    check("closed line + no buttons text", "Closed" in closed_card and "Total answered: 1" in closed_card)
 
     print("\nAll wizard/render checks passed.")
 

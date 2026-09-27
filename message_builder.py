@@ -330,24 +330,6 @@ def setask_day_markup(lang="en"):
     return InlineKeyboardMarkup(rows)
 
 
-def meet_message_markup(bot_username, session_id, lang="en"):
-    """Single deep-link button into the bot DM for this meet session."""
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    tr(lang, "meet_join_btn"),
-                    url=f"https://t.me/{bot_username}?start=m_{session_id}",
-                )
-            ]
-        ]
-    )
-
-
-def build_meet_text(lang="en"):
-    return tr(lang, "meet_posted")
-
-
 def ask_markup(session_id, options):
     """One inline button per option: callback ask:<session>:<position>."""
     rows = [

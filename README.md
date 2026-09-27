@@ -73,22 +73,17 @@ One-shot `/setname <name>` still applies immediately.
 
 ## On-demand video rooms (/meet)
 
-Groups only, admins only. `/meet` posts one message with a Join button
-(deep link into the bot DM). Members tapping it get a personal Jitsi link;
-admins enter as moderators, everyone else as guests. Non-members and expired
-links are refused. Joins stay open 5 minutes; at the deadline the session
-closes and the group message is deleted, so `/meet` works again.
-`/endmeet` closes early.
+Groups only, admins only. `/meet` posts a plain clickable link to a room on
+the self-hosted Jitsi site (password auth lives on the site itself — no
+tokens, no bot DM step). One room per chat at a time; after 5 minutes with
+the message up, the session closes, the message is deleted, and `/meet`
+works again. `/endmeet` closes early.
 
-Limitation (Phase 1): a call already running keeps going after the 5 minutes
-— expiry only blocks new joins. Occupancy-based auto-close was investigated
-on the VPS (stable-11248): `mod_muc_size` needs an `app_id` module option the
-stock templates cannot set, and `mod_muc_census` looks up
-`conference.<host>` which does not match this deployment's `muc.meet.jitsi`,
-so neither worked. The bot stays on Phase 1.
+The site uses simple password auth (`AUTH_TYPE=internal`): the owner logs in
+as moderator and starts any room; guests join started rooms via plain link.
+Everyone joins mic+camera off (`START_AUDIO_MUTED=1`, `START_VIDEO_MUTED=1`).
 
-Requires JWT auth on Jitsi (`AUTH_TYPE=jwt`, `JWT_APP_ID=lessons`, …) and bot
-env `JITSI_DOMAIN` + `JITSI_JWT_SECRET` (server `.env` only).
+Bot needs only `JITSI_DOMAIN` (server `.env`).
 
 ## Scheduled questions (/setask)
 
@@ -99,11 +94,6 @@ the question weekly with one button per option and live-edits the tally as
 people answer; tapping your answer again retracts it. `?` options prompt only
 you for a reason (3-minute window), then save. Answers close after
 `duration_min` (default 360); buttons are removed and the tally stays.
-
-## Owner rooms (/room)
-
-DM-only, owner-only (`OWNER_ID` env). `/room [name]` replies with a moderator
-link (8h) and a shareable guest link (3h). Independent of `/meet`.
 
 ## Requirements for a group
 

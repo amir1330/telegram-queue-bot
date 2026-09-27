@@ -1,4 +1,4 @@
-"""Smoke tests for meet sessions, asks, JWT shape, and parsers. No Telegram needed.
+"""Smoke tests for meet sessions, plain links, asks, and parsers. No Telegram needed.
 
 Run: venv/bin/python tests/test_meet_ask.py
 """
@@ -11,11 +11,10 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["DB_PATH"] = ""
 os.environ["JITSI_DOMAIN"] = "meet.example.com"
-os.environ["JITSI_JWT_SECRET"] = "test-secret-for-smoke-only"
 
 import db
-import jitsi
 from handlers.ask_handlers import parse_ask_options, parse_setask_full
+from handlers.meet_handler import meet_plain_url, new_plain_room
 
 
 def check(label, cond):
@@ -48,29 +47,12 @@ def main():
     check("active still blocks /meet", db.get_blocking_meet_session(chat_id)["id"] == s2["id"])
     db.set_meet_session_state(s2["id"], "closed")
 
-    # --- room names ---
-    room = jitsi.new_room_name("lesson-")
-    check("room prefix", room.startswith("lesson-"))
-    check("room charset", all(c.islower() or c.isdigit() or c in "-_." for c in room))
-    check("sanitize keeps safe names", jitsi.sanitize_room_name("My Lesson 1") == "my-lesson-1")
-    check("sanitize falls back", jitsi.sanitize_room_name("!!!").startswith("room-"))
-
-    # --- JWT shape (HS256, aud/iss/sub/room/exp/context) ---
-    token = jitsi.make_jwt("lesson-abc", 42, "Ali", True, time.time() + 300)
-    import jwt as pyjwt
-    payload = pyjwt.decode(
-        token, "test-secret-for-smoke-only", algorithms=["HS256"], audience="jitsi",
-        options={"require": ["aud", "iss", "sub", "room", "exp"]},
-    )
-    check("jwt aud", payload["aud"] == "jitsi")
-    check("jwt iss", payload["iss"] == "lessons")
-    check("jwt sub is XMPP domain", payload["sub"] == "meet.jitsi")
-    check("jwt room bound", payload["room"] == "lesson-abc")
-    check("jwt moderator", payload["context"]["user"]["moderator"] is True)
-    check("jwt user", payload["context"]["user"]["id"] == "42")
-    guest = jitsi.make_jwt("lesson-abc", 43, "Dana", False, time.time() + 300)
-    guest_payload = pyjwt.decode(guest, "test-secret-for-smoke-only", algorithms=["HS256"], audience="jitsi")
-    check("guest not moderator", guest_payload["context"]["user"]["moderator"] is False)
+    # --- plain rooms: chat-scoped names, no tokens ---
+    room = new_plain_room(-1004436571827)
+    check("room chat prefix", room.startswith("chat1004436571827-"))
+    check("room charset", all(c.islower() or c.isdigit() or c == "-" for c in room))
+    check("rooms unique", new_plain_room(-1004436571827) != new_plain_room(-1004436571827))
+    check("plain url", meet_plain_url("chat1-abc") == "https://meet.example.com/chat1-abc")
 
     # --- ask option syntax ---
     opts = parse_ask_options("Yes | No | ?I have a reason")

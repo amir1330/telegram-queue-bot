@@ -55,6 +55,7 @@ from handlers.param_reply import on_param_reply
 from handlers.all_handler import cmd_all, learn_group_user, remember_user
 from handlers.queue_handlers import cmd_leave, cmd_queue, cmd_setname
 from handlers.reuse_handler import cmd_reuse
+from handlers.service_cleanup import cleanup_service_message
 from handlers.timer_handlers import cb_timer
 from handlers.tz_handler import cb_tz, cmd_tz
 from i18n import LANGS, tr
@@ -192,6 +193,11 @@ def main():
     application.add_handler(
         MessageHandler(filters.ChatType.GROUPS & ~filters.StatusUpdate.ALL, learn_group_user),
         group=1,
+    )
+    # Delete system messages (joins, leaves, call invites) to keep chats clean.
+    application.add_handler(
+        MessageHandler(filters.StatusUpdate.ALL, cleanup_service_message),
+        group=2,
     )
     application.add_handler(CallbackQueryHandler(cb_lang, pattern="^lang_"))
     application.add_handler(CallbackQueryHandler(cb_tz, pattern="^tz_"))

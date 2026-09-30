@@ -194,9 +194,11 @@ def main():
         MessageHandler(filters.ChatType.GROUPS & ~filters.StatusUpdate.ALL, learn_group_user),
         group=1,
     )
-    # Delete system messages (joins, leaves, call invites) to keep chats clean.
+    # Delete ALL service messages (joins, video chats, boosts, gifts...).
+    # Catch-all: function itself decides service vs user content, so future
+    # Telegram service types are removed even if StatusUpdate.ALL misses them.
     application.add_handler(
-        MessageHandler(filters.StatusUpdate.ALL, cleanup_service_message),
+        MessageHandler(filters.UpdateType.MESSAGE, cleanup_service_message),
         group=2,
     )
     application.add_handler(CallbackQueryHandler(cb_lang, pattern="^lang_"))

@@ -246,6 +246,26 @@ def build_timer_text(lesson, entries, current_index, remaining_seconds, running,
     return "\n".join(lines)
 
 
+def build_turnover_text(entries, current_index, lang="en"):
+    """Separate 'time is up' handoff message with mentions.
+
+    Mentions use tg://user links so they ping even without @username.
+    Returns None when there is no current speaker to announce.
+    """
+    if not entries or not (0 <= current_index < len(entries)):
+        return None
+
+    def _mention(entry):
+        name = (entry.get("display_name") or "").strip() or str(entry.get("user_id", "?"))
+        return f'<a href="tg://user?id={entry.get("user_id")}">{html.escape(name)}</a>'
+
+    current = _mention(entries[current_index])
+    nxt = entries[current_index + 1] if current_index + 1 < len(entries) else None
+    if nxt is not None:
+        return tr(lang, "timer_turnover", current=current, nxt=_mention(nxt))
+    return tr(lang, "timer_turnover_last", current=current)
+
+
 def student_commands(lang="en"):
     return "\n".join(
         [

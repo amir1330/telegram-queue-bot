@@ -254,6 +254,7 @@ class QueueScheduler:
             pass
         timer_row = db.get_active_timer(chat_id, lesson_id, session_date)
         if timer_row:
+            await self._delete_turnover_message(chat_id, timer_row)
             try:
                 await self.bot.edit_message_reply_markup(
                     chat_id=chat_id, message_id=timer_row["message_id"], reply_markup=None
@@ -375,6 +376,45 @@ class QueueScheduler:
             return
         await self.open_timer(chat_id, lesson_id, session_date=session_date)
 
+    async def _delete_turnover_message(self, chat_id, timer_row):
+        """Best-effort delete of the 'time is up' handoff message."""
+        msg_id = (timer_row or {}).get("turnover_message_id")
+        if not msg_id:
+            return
+        try:
+            await self.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except Exception as exc:
+            logger.debug("turnover: delete failed chat=%s msg=%s: %s", chat_id, msg_id, exc)
+        try:
+            db.update_active_timer(
+                timer_row["chat_id"], timer_row["lesson_id"], timer_row["session_date"],
+                turnover_message_id=None,
+            )
+        except Exception:
+            pass
+
+    async def _send_turnover_message(self, chat_id, lesson_id, session_date):
+        """Send 'time is up @current, now @next' as a separate message."""
+        from message_builder import build_turnover_text
+        timer_row = db.get_active_timer(chat_id, lesson_id, session_date)
+        if not timer_row:
+            return
+        if timer_row.get("turnover_message_id"):
+            return  # already announced, avoid duplicates
+        lang = db.get_chat_lang(chat_id)
+        entries = db.get_queue(chat_id, lesson_id, session_date)
+        text = build_turnover_text(entries, timer_row.get("current_index", 0), lang=lang)
+        if not text:
+            return
+        # Remove a stale handoff first (e.g. timer re-run without switch).
+        await self._delete_turnover_message(chat_id, timer_row)
+        try:
+            msg = await self.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+        except Exception as exc:
+            logger.warning("turnover: send failed chat=%s: %s", chat_id, exc)
+            return
+        db.update_active_timer(chat_id, lesson_id, session_date, turnover_message_id=msg.message_id)
+
     async def _tick(self, chat_id, lesson_id):
         # find the open timer for this lesson (there should be at most one running)
         timers = db.get_active_timers(chat_id=chat_id, lesson_id=lesson_id)
@@ -392,6 +432,7 @@ class QueueScheduler:
             db.update_active_timer(target["chat_id"], target["lesson_id"], target["session_date"], remaining_seconds=0, running=0, started_at=None)
             self._stop_tick(chat_id, lesson_id)
             await self._refresh_timer_message(target["chat_id"], target["lesson_id"], target["session_date"])
+            await self._send_turnover_message(target["chat_id"], target["lesson_id"], target["session_date"])
             return
         await self._refresh_timer_message(target["chat_id"], target["lesson_id"], target["session_date"])
 

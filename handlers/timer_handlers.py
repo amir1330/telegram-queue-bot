@@ -18,6 +18,24 @@ def _find_timer_by_message(chat_id, message_id):
     return None
 
 
+async def _clear_turnover(context, timer):
+    """Delete the 'time is up' handoff message on switch, to keep chat clean."""
+    msg_id = (timer or {}).get("turnover_message_id")
+    if not msg_id:
+        return
+    try:
+        await context.bot.delete_message(chat_id=timer["chat_id"], message_id=msg_id)
+    except Exception:
+        pass
+    try:
+        db.update_active_timer(
+            timer["chat_id"], timer["lesson_id"], timer["session_date"],
+            turnover_message_id=None,
+        )
+    except Exception:
+        pass
+
+
 async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if not query or not query.data:
@@ -61,6 +79,7 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # stop tick if running
         if scheduler:
             scheduler._stop_tick(chat_id, lesson_id)
+        await _clear_turnover(context, timer)
         db.update_active_timer(chat_id, lesson_id, session_date, current_index=new_index, remaining_seconds=timer_sec, running=0, started_at=None)
         if scheduler:
             await scheduler._refresh_timer_message(chat_id, lesson_id, session_date)
@@ -85,6 +104,7 @@ async def cb_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         timer_sec = lesson.get("answer_timer_sec") or 420
         if scheduler:
             scheduler._stop_tick(chat_id, lesson_id)
+        await _clear_turnover(context, timer)
         db.update_active_timer(chat_id, lesson_id, session_date, current_index=new_index, remaining_seconds=timer_sec, running=0, started_at=None)
         if scheduler:
             await scheduler._refresh_timer_message(chat_id, lesson_id, session_date)

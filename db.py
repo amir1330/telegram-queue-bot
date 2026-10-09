@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS active_timers (
     remaining_seconds INTEGER NOT NULL,
     running INTEGER NOT NULL DEFAULT 0,
     started_at TEXT,
+    turnover_message_id INTEGER,
     PRIMARY KEY (chat_id, lesson_id, session_date)
 );
 
@@ -235,6 +236,13 @@ def _migrate(conn):
             conn.commit()
         except Exception:
             pass
+    try:
+        timer_cols = {r["name"] for r in conn.execute("PRAGMA table_info(active_timers)").fetchall()}
+    except Exception:
+        timer_cols = set()
+    if timer_cols and "turnover_message_id" not in timer_cols:
+        conn.execute("ALTER TABLE active_timers ADD COLUMN turnover_message_id INTEGER")
+        conn.commit()
     conn.execute(
         "DELETE FROM queue_entries WHERE entry_id NOT IN "
         "(SELECT MIN(entry_id) FROM queue_entries "
@@ -770,7 +778,8 @@ def save_active_timer(chat_id, lesson_id, session_date, message_id, current_inde
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(chat_id, lesson_id, session_date) DO UPDATE SET "
             "message_id = excluded.message_id, current_index = excluded.current_index, "
-            "remaining_seconds = excluded.remaining_seconds, running = excluded.running, started_at = excluded.started_at",
+            "remaining_seconds = excluded.remaining_seconds, running = excluded.running, started_at = excluded.started_at, "
+            "turnover_message_id = NULL",
             (chat_id, lesson_id, session_date, message_id, current_index, remaining_seconds, running, started_at),
         )
         conn.commit()
@@ -806,7 +815,7 @@ def get_active_timers(chat_id=None, lesson_id=None, session_date=None):
 
 
 def update_active_timer(chat_id, lesson_id, session_date, **fields):
-    allowed = {"message_id", "current_index", "remaining_seconds", "running", "started_at"}
+    allowed = {"message_id", "current_index", "remaining_seconds", "running", "started_at", "turnover_message_id"}
     sets, params = [], []
     for k, v in fields.items():
         if k in allowed:

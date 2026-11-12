@@ -19,7 +19,6 @@ from handlers.config_handlers import (
     apply_before,
     apply_delete,
     apply_duration,
-    apply_header,
     apply_setlesson,
     apply_setlesson_time,
     apply_timer,
@@ -37,8 +36,7 @@ from i18n import tr
 logger = logging.getLogger(__name__)
 
 _ADMIN_COMMANDS = frozenset(
-    {"setlesson", "setlesson_time", "before", "duration", "delete", "header", "timer",
-     "setask_time", "setask_question", "setask_options"}
+    {"setlesson", "setlesson_time", "before", "duration", "delete", "timer"}
 )
 
 _APPLY = {
@@ -58,13 +56,6 @@ def _looks_like_answer(command: str, text: str) -> bool:
     text = (text or "").strip()
     if not text:
         return False
-    if command == "header":
-        # Mentions / code fences / multi-line notes while pending.
-        return len(text) <= 2000
-    if command in ("setask_question", "setask_options", "ask_reason"):
-        # Free text by design: multi-line questions, one-per-line options,
-        # multi-line reasons. Length caps enforced by the apply step.
-        return 0 < len(text) <= 1000
     if "\n" in text:
         return False
     if command == "setlesson_time":
@@ -83,8 +74,6 @@ def _looks_like_answer(command: str, text: str) -> bool:
     if command == "setlesson":
         parts = text.split()
         return len(parts) >= 2 and bool(_TIME_RE.match(parts[-1]))
-    if command in ("setask_time",):
-        return bool(_TIME_RE.match(text))
     return len(text) <= 80
 
 
@@ -144,42 +133,12 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     ui_message_id = None
-    if command == "ask_reason":
-        # Anyone in the group can answer; no admin check. Full text = reason.
-        from handlers.ask_handlers import apply_ask_reason
-        ok = await apply_ask_reason(update, context)
-        if not ok:
-            return
-        prompt_message_id = pending["prompt_message_id"]
-        clear_pending(chat.id, user.id)
-        await delete_prompt_best_effort(context.bot, chat.id, prompt_message_id)
-        if ui_message_id:
-            schedule_delete(context.bot, chat.id, ui_message_id, seconds=0)
-        return
-    if command == "setask_time":
-        from handlers.ask_handlers import apply_setask_time
-        ok = await apply_setask_time(update, context, args, pending.get("payload"))
-    elif command == "setask_question":
-        from handlers.ask_handlers import apply_setask_question
-        ok = await apply_setask_question(update, context, args, pending.get("payload"))
-    elif command == "setask_options":
-        from handlers.ask_handlers import apply_setask_options
-        ok = await apply_setask_options(update, context, args, pending.get("payload"))
-    elif command == "setlesson_time":
+    if command == "setlesson_time":
         day, ui_message_id = parse_setlesson_payload(pending.get("payload"))
         if not day:
             clear_pending(chat.id, user.id)
             return
         ok = await apply_setlesson_time(update, context, args, day)
-    elif command == "header":
-        day, ui_message_id = parse_setlesson_payload(pending.get("payload"))
-        if not day:
-            clear_pending(chat.id, user.id)
-            return
-        from message_builder import serialize_header_from_message
-
-        header_text = serialize_header_from_message(message)
-        ok = await apply_header(update, context, day, header_text)
     elif command in ("before", "duration", "timer") and pending.get("payload"):
         day, ui_message_id = parse_setlesson_payload(pending.get("payload"))
         if day and len(args) == 1:
@@ -213,11 +172,4 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await delete_prompt_best_effort(context.bot, chat.id, prompt_message_id)
     if ui_message_id:
         schedule_delete(context.bot, chat.id, ui_message_id, seconds=0)
-    if command in ("setask_time", "setask_question", "setask_options"):
-        # Wizard hygiene: remove the admin's answer, keep only bot prompts.
-        try:
-            await context.bot.delete_message(
-                chat_id=chat.id, message_id=message.message_id
-            )
-        except Exception as exc:
-            logger.debug("wizard: delete admin reply failed: %s", exc)
+

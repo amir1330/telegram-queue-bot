@@ -129,17 +129,6 @@ def timer_markup(lang="en", running=False):
     )
 
 
-def lang_markup(lang="en"):
-    """Language selector buttons (shown by /lang and on the welcome)."""
-    buttons = []
-    for code in ("en", "ru"):
-        label = "English" if code == "en" else "Русский"
-        if code == lang:
-            label += " [selected]"
-        buttons.append(InlineKeyboardButton(label, callback_data=f"lang_{code}"))
-    return InlineKeyboardMarkup([buttons])
-
-
 def tz_markup():
     """Timezone picker buttons: curated zones, one per row."""
     rows = []
@@ -204,12 +193,7 @@ def build_queue_text(lesson, session_date, entries, lang="en", closed=False):
     title = tr(lang, "queue_title_closed" if closed else "queue_title")
     when = tr(lang, "queue_when", day=day_long(lang, lesson["day_of_week"]), time=lesson["lesson_time"])
 
-    lines = []
-    header = (lesson.get("header_text") or "").strip()
-    if header:
-        lines.append(format_header_html(header))
-        lines.append("")
-    lines.extend([title, when])
+    lines = [title, when]
     if entries:
         lines.append("")
         # current speaker from active timer, if any
@@ -266,41 +250,6 @@ def build_turnover_text(entries, current_index, lang="en"):
     return tr(lang, "timer_turnover_last", current=current)
 
 
-def student_commands(lang="en"):
-    return "\n".join(
-        [
-            "/queue - " + tr(lang, "student_queue"),
-            "/leave - " + tr(lang, "student_leave"),
-            "/setname - " + tr(lang, "student_setname"),
-        ]
-    )
-
-
-def admin_commands(lang="en"):
-    return "\n".join(
-        [
-            "/info - " + tr(lang, "student_info"),
-            "/lang - " + tr(lang, "student_lang"),
-            "/setlesson &lt;Day&gt; &lt;HH:MM&gt; - " + tr(lang, "admin_setlesson"),
-            "/before &lt;min&gt; - " + tr(lang, "admin_before"),
-            "/duration &lt;min&gt; - " + tr(lang, "admin_duration"),
-            "/timer &lt;sec&gt; - " + tr(lang, "admin_timer"),
-            "/reuse - " + tr(lang, "admin_reuse"),
-            "/delete &lt;Day&gt; - " + tr(lang, "admin_delete"),
-            "/header - " + tr(lang, "admin_header"),
-            "/tz - " + tr(lang, "admin_tz"),
-            "/all - " + tr(lang, "admin_all"),
-            "/meet - " + tr(lang, "admin_meet"),
-            "/endmeet - " + tr(lang, "admin_endmeet"),
-            "/setask &lt;Day&gt; &lt;HH:MM&gt; | ... - " + tr(lang, "admin_setask"),
-            "/asks - " + tr(lang, "admin_asks"),
-            "/delask &lt;id&gt; - " + tr(lang, "admin_delask"),
-            "/askduration [id] &lt;min&gt; - " + tr(lang, "admin_askduration"),
-            "/askpost &lt;id&gt; - " + tr(lang, "admin_askpost"),
-        ]
-    )
-
-
 def _lesson_block(lessons, lang="en"):
     if not lessons:
         return None
@@ -311,7 +260,7 @@ def _lesson_block(lessons, lang="en"):
 
 
 def build_info_text(lessons, is_admin=False, lang="en", zone=None, zone_label=""):
-    """Language-aware /info: current settings + commands; admin section only for admins."""
+    """Language-aware /info: current schedule/settings only."""
     parts = []
     block = _lesson_block(lessons, lang=lang)
     header = tr(lang, "config_header")
@@ -321,9 +270,6 @@ def build_info_text(lessons, is_admin=False, lang="en", zone=None, zone_label=""
         parts.append(header + "\n" + block)
     else:
         parts.append(header + "\n" + tr(lang, "config_empty") + "\n\n" + tr(lang, "config_empty_hint"))
-    parts.append(tr(lang, "commands_header") + "\n" + student_commands(lang))
-    if is_admin:
-        parts.append(tr(lang, "admin_header") + "\n" + admin_commands(lang))
     return "\n\n".join(parts)
 
 
@@ -331,87 +277,3 @@ def welcome_text(lang="en"):
     return tr(lang, "welcome_body")
 
 
-def setask_day_markup(lang="en"):
-    """Weekday picker for /setask (same layout as /setlesson, own callback)."""
-    keys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-    rows = []
-    row = []
-    for key in keys:
-        row.append(
-            InlineKeyboardButton(
-                day_long(lang, key), callback_data=f"setask_day_{key}"
-            )
-        )
-        if len(row) == 2:
-            rows.append(row)
-            row = []
-    if row:
-        rows.append(row)
-    return InlineKeyboardMarkup(rows)
-
-
-def ask_markup(session_id, options):
-    """One inline button per option: callback ask:<session>:<position>."""
-    rows = [
-        [InlineKeyboardButton(opt["label"], callback_data=f"ask:{session_id}:{opt['position']}")]
-        for opt in options
-    ]
-    return InlineKeyboardMarkup(rows) if rows else None
-
-
-def _ask_close_line(closes_at, chat_id, lang):
-    """'Open until HH:MM' in the chat timezone (None when unknown)."""
-    if not closes_at or not chat_id:
-        return None
-    try:
-        from timezone import chat_tz
-        tz = chat_tz(chat_id)
-        if tz is None:
-            return None
-        from datetime import datetime
-        hm = datetime.fromtimestamp(float(closes_at), tz=tz).strftime("%H:%M")
-        return tr(lang, "ask_open_until", time=hm)
-    except Exception:
-        return None
-
-
-def build_ask_text(question, options, responses, user_names, closed=False,
-                   closes_at=None, chat_id=None, lang="en", max_names=10):
-    """Structured poll card: question, open/closed line, per-option tallies.
-
-    Zero-response options stay visible with '— 0'. Names truncate with
-    '+N more' past max_names so long lists don't explode the message.
-    Everything user-supplied is HTML-escaped.
-    """
-    lines = [f"<b>{html.escape(question)}</b>"]
-    if closed:
-        lines.append(tr(lang, "ask_closed_line"))
-    else:
-        close_line = _ask_close_line(closes_at, chat_id, lang)
-        if close_line:
-            lines.append(close_line)
-    lines.append("")
-    by_option: dict[int, list] = {opt["position"]: [] for opt in options}
-    for r in responses:
-        by_option.setdefault(r["option_id"], []).append(r)
-    for opt in options:
-        group = by_option.get(opt["position"], [])
-        lines.append(f"<b>{html.escape(opt['label'])}</b> — {len(group)}")
-        if not group:
-            lines.append(tr(lang, "ask_no_answers"))
-        else:
-            parts = []
-            for r in group:
-                name = html.escape(user_names.get(r["user_id"], str(r["user_id"])))
-                if r.get("reason"):
-                    parts.append(f"{name} — <i>{html.escape(r['reason'])}</i>")
-                else:
-                    parts.append(name)
-            shown = parts[:max_names]
-            if len(parts) > max_names:
-                shown.append(tr(lang, "ask_more", n=len(parts) - max_names))
-            lines.append(", ".join(shown))
-        lines.append("")
-    lines.append("-" * 12)
-    lines.append(tr(lang, "ask_total", n=len(responses)))
-    return "\n".join(lines)

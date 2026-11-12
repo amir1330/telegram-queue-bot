@@ -29,23 +29,14 @@ STUDENT_COMMANDS = [
 
 ADMIN_COMMANDS = [
     ("info", "Настройки и команды / Settings & info"),
-    ("lang", "Язык / Language"),
     ("setlesson", "Задать урок: день и время / Set a lesson"),
     ("before", "За сколько минут до урока открыть очередь / Open-before minutes"),
     ("duration", "Очередь закроется спустя N мин / Queue closes after N min"),
     ("timer", "Таймер ответа в секундах / Answer timer seconds"),
     ("reuse", "Копировать очередь с прошлого урока / Reuse prev queue"),
     ("delete", "Удалить урок для дня / Remove a lesson"),
-    ("header", "Текст в шапке очереди / Queue header text"),
     ("tz", "Часовой пояс чата / Chat timezone"),
     ("all", "Тегнуть всех / Mention everyone"),
-    ("meet", "Открыть видео-комнату / Open a video room"),
-    ("endmeet", "Закрыть видео-комнату / Close the video room"),
-    ("setask", "Вопрос с ответами / Question with answers"),
-    ("asks", "Список вопросов / List questions"),
-    ("delask", "Удалить вопрос / Delete a question"),
-    ("askduration", "Сколько открыты ответы / Answer window minutes"),
-    ("askpost", "Опубликовать вопрос сейчас / Post a question now"),
 ]
 
 

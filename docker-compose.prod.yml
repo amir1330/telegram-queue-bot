@@ -5,7 +5,6 @@ services:
     restart: unless-stopped
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
-      - JITSI_DOMAIN=${JITSI_DOMAIN}
     volumes:
       - queue_bot_data:/app/data
 

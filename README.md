@@ -38,18 +38,13 @@ students join/leave, closes it at lesson time, and cleans it up afterwards.
 | Command | Effect |
 |---|---|
 | `/setlesson Monday 23:00` | add/update a lesson (or bare `/setlesson` → day buttons, then type time) |
-| `/before [day] <min>` | minutes before the lesson the queue opens (default 30) |
-| `/duration [day] <min>` | minutes after lesson start the queue keeps accepting joins (default 120) |
+| `/before [day] <min>` | minutes before the lesson the queue opens (default 60) |
+| `/duration [day] <min>` | minutes after lesson start the queue keeps accepting joins (default 300) |
+| `/timer <sec>` | answer timer duration (default 420) |
 | `/delete Monday` | remove a lesson (English or Russian day names work) |
 | `/tz` | set the chat's timezone (IANA name or UTC+HH:MM) |
-| `/ping` | mention known members who are not in the open queue |
-| `/meet` | open an on-demand Jitsi room (joins open 5 min) |
-| `/endmeet` | force-close the active Jitsi room |
-| `/setask Monday 12:00 \| Q? \| Yes \| No \| ?Reason` | schedule a question with answers |
-| `/asks` | list this chat's scheduled questions |
-| `/delask <id>` | delete a scheduled question |
-| `/askduration [id] <min>` | how long answers stay open (default 360) |
-| `/askpost <id>` | post a question now (testing) |
+| `/reuse` | copy the previous lesson's queue into the current open queue |
+| `/all` | mention everyone the bot has seen in the group |
 
 Config changes apply to the scheduler immediately — no restart needed.
 
@@ -65,35 +60,10 @@ into the flow. One-shot forms with args still work as above.
 | `/queue` | join today's open queue |
 | `/leave` | leave the queue |
 | `/setname Amir Abu Yunus` | set the name shown in this chat's queue |
-| `/info` | current settings + command list |
-| `/lang` | choose chat language (English / Русский) |
+| `/info` | current schedule and settings |
 
 Bare `/setname` prompts only you for a name (same selective reply pattern).
 One-shot `/setname <name>` still applies immediately.
-
-## On-demand video rooms (/meet)
-
-Groups only, admins only. `/meet` posts a plain clickable link to a room on
-the self-hosted Jitsi site (password auth lives on the site itself — no
-tokens, no bot DM step). One room per chat at a time; after 5 minutes with
-the message up, the session closes, the message is deleted, and `/meet`
-works again. `/endmeet` closes early.
-
-The site uses simple password auth (`AUTH_TYPE=internal`): the owner logs in
-as moderator and starts any room; guests join started rooms via plain link.
-Everyone joins mic+camera off (`START_AUDIO_MUTED=1`, `START_VIDEO_MUTED=1`).
-
-Bot needs only `JITSI_DOMAIN` (server `.env`).
-
-## Scheduled questions (/setask)
-
-Admins schedule repeating questions, e.g.
-`/setask Monday 12:00 | Are you coming Mon 18:00? | Yes | No | ?I have a reason`
-(`?` = answering needs a reason). Times use the chat timezone. The bot posts
-the question weekly with one button per option and live-edits the tally as
-people answer; tapping your answer again retracts it. `?` options prompt only
-you for a reason (3-minute window), then save. Answers close after
-`duration_min` (default 360); buttons are removed and the tally stays.
 
 ## Requirements for a group
 

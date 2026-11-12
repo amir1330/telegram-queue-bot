@@ -333,7 +333,7 @@ def set_chat_timezone(chat_id, tz_name, title=None):
 
 # -------------------------------------------------------------- lessons
 
-def add_lesson(chat_id, day_of_week, lesson_time, open_before_min=30, lifetime_min=120, title=None):
+def add_lesson(chat_id, day_of_week, lesson_time, open_before_min=60, lifetime_min=300, title=None):
     """Insert or update the lesson for (chat, day_of_week). Returns the lesson row.
 
     On update (same day already exists), only the time is changed — open_before

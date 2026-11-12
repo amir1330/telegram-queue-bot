@@ -29,6 +29,11 @@ from handlers.config_handlers import (
     cmd_setlesson,
     cmd_timer,
 )
+from handlers.exam_handler import (
+    cb_exam_section,
+    cb_exam_type,
+    cmd_exam,
+)
 from handlers.helpers import (
     TRIGGER_DELETE_SECONDS,
     cleanup_trigger,
@@ -119,6 +124,7 @@ def main():
     application.add_handler(CommandHandler("timer", cmd_timer))
     application.add_handler(CommandHandler("reuse", cmd_reuse))
     application.add_handler(CommandHandler("delete", cmd_delete))
+    application.add_handler(CommandHandler("exam", cmd_exam))
     application.add_handler(CommandHandler("tz", cmd_tz))
     application.add_handler(CommandHandler("all", cmd_all))
     application.add_handler(
@@ -145,6 +151,8 @@ def main():
     application.add_handler(CallbackQueryHandler(cb_timer_day, pattern="^timer_day_"))
     application.add_handler(CallbackQueryHandler(cb_timer, pattern="^timer_(prev|next|toggle)$"))
     application.add_handler(CallbackQueryHandler(on_button, pattern="^(join|leave)$"))
+    application.add_handler(CallbackQueryHandler(cb_exam_type, pattern="^exam_type_"))
+    application.add_handler(CallbackQueryHandler(cb_exam_section, pattern="^exam_section_"))
     application.add_handler(
         ChatMemberHandler(on_chat_member, ChatMemberHandler.ANY_CHAT_MEMBER)
     )

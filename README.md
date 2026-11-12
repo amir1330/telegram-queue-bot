@@ -44,6 +44,7 @@ students join/leave, closes it at lesson time, and cleans it up afterwards.
 | `/delete Monday` | remove a lesson (English or Russian day names work) |
 | `/tz` | set the chat's timezone (IANA name or UTC+HH:MM) |
 | `/reuse` | copy the previous lesson's queue into the current open queue |
+| `/exam` | generate an exam result card (джуз/хизб → section → name → grade) |
 | `/all` | mention everyone the bot has seen in the group |
 
 Config changes apply to the scheduler immediately — no restart needed.

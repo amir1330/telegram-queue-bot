@@ -24,6 +24,7 @@ from handlers.config_handlers import (
     apply_timer,
     parse_setlesson_payload,
 )
+from handlers.exam_handler import apply_exam_grade, apply_exam_name
 from handlers.helpers import is_admin, reply_ephemeral, schedule_delete
 from handlers.param_prompt import (
     clear_pending,
@@ -36,7 +37,7 @@ from i18n import tr
 logger = logging.getLogger(__name__)
 
 _ADMIN_COMMANDS = frozenset(
-    {"setlesson", "setlesson_time", "before", "duration", "delete", "timer"}
+    {"setlesson", "setlesson_time", "before", "duration", "delete", "timer", "exam_name", "exam_grade"}
 )
 
 _APPLY = {
@@ -46,6 +47,8 @@ _APPLY = {
     "duration": apply_duration,
     "timer": apply_timer,
     "delete": apply_delete,
+    "exam_name": apply_exam_name,
+    "exam_grade": apply_exam_grade,
 }
 
 _TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
@@ -74,6 +77,10 @@ def _looks_like_answer(command: str, text: str) -> bool:
     if command == "setlesson":
         parts = text.split()
         return len(parts) >= 2 and bool(_TIME_RE.match(parts[-1]))
+    if command == "exam_name":
+        return 0 < len(text) <= 100
+    if command == "exam_grade":
+        return text.isdigit() and len(text) <= 3
     return len(text) <= 80
 
 
@@ -133,7 +140,11 @@ async def on_param_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     ui_message_id = None
-    if command == "setlesson_time":
+    if command == "exam_name":
+        ok = await apply_exam_name(update, context, pending.get("payload"))
+    elif command == "exam_grade":
+        ok = await apply_exam_grade(update, context, pending.get("payload"))
+    elif command == "setlesson_time":
         day, ui_message_id = parse_setlesson_payload(pending.get("payload"))
         if not day:
             clear_pending(chat.id, user.id)

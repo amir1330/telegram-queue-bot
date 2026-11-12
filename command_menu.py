@@ -35,6 +35,7 @@ ADMIN_COMMANDS = [
     ("timer", "Таймер ответа в секундах / Answer timer seconds"),
     ("reuse", "Копировать очередь с прошлого урока / Reuse prev queue"),
     ("delete", "Удалить урок для дня / Remove a lesson"),
+    ("exam", "Результат экзамена / Exam result"),
     ("tz", "Часовой пояс чата / Chat timezone"),
     ("all", "Тегнуть всех / Mention everyone"),
 ]
